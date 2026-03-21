@@ -2,21 +2,31 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/lib/store';
+import { useSession } from 'next-auth/react';
 import Sidebar from '@/components/Sidebar';
 import { Toaster } from 'react-hot-toast';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore();
+  const { status } = useSession();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (status === 'unauthenticated') {
       router.push('/login');
     }
-  }, [isAuthenticated, router]);
+  }, [status, router]);
 
-  if (!isAuthenticated) return null;
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-[#f5f5fa] flex items-center justify-center">
+        <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold animate-pulse">
+          AI
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') return null;
 
   return (
     <div className="min-h-screen bg-[#f5f5fa]">

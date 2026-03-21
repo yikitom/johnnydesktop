@@ -2,19 +2,19 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/lib/store';
+import { useSession } from 'next-auth/react';
 
 export default function Home() {
   const router = useRouter();
-  const { isAuthenticated } = useAuthStore();
+  const { status } = useSession();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (status === 'authenticated') {
       router.push('/reading');
-    } else {
+    } else if (status === 'unauthenticated') {
       router.push('/login');
     }
-  }, [isAuthenticated, router]);
+  }, [status, router]);
 
   return (
     <div className="min-h-screen bg-[#0a0a14] flex items-center justify-center">

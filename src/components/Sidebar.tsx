@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuthStore } from '@/lib/store';
+import { useSession, signOut } from 'next-auth/react';
 
 const navItems = [
   { href: '/reading', label: 'AI 读书', icon: '📚' },
@@ -11,7 +11,8 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { user, logout } = useAuthStore();
+  const { data: session } = useSession();
+  const user = session?.user;
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-64 bg-[#0f0f1a] text-white flex flex-col z-50">
@@ -55,15 +56,24 @@ export default function Sidebar() {
       {/* User */}
       <div className="p-4 border-t border-white/10">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-sm font-bold">
-            {user?.name?.[0]?.toUpperCase() || 'U'}
-          </div>
+          {user?.image ? (
+            <img
+              src={user.image}
+              alt={user.name || ''}
+              className="w-8 h-8 rounded-full"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-sm font-bold">
+              {user?.name?.[0]?.toUpperCase() || 'U'}
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{user?.name || 'User'}</p>
             <p className="text-[11px] text-white/40 truncate">{user?.email}</p>
           </div>
           <button
-            onClick={logout}
+            onClick={() => signOut({ callbackUrl: '/login' })}
             className="text-white/40 hover:text-white/80 text-xs transition-colors"
             title="退出登录"
           >

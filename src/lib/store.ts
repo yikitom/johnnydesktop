@@ -1,30 +1,5 @@
 import { create } from 'zustand';
 
-// ==================== Auth Store ====================
-interface AuthState {
-  isAuthenticated: boolean;
-  user: { name: string; email: string; avatar?: string } | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
-}
-
-export const useAuthStore = create<AuthState>((set) => ({
-  isAuthenticated: false,
-  user: null,
-  login: async (email: string, password: string) => {
-    // Demo: accept any non-empty credentials
-    if (email && password) {
-      set({
-        isAuthenticated: true,
-        user: { name: email.split('@')[0], email, avatar: undefined },
-      });
-      return true;
-    }
-    return false;
-  },
-  logout: () => set({ isAuthenticated: false, user: null }),
-}));
-
 // ==================== Book Types ====================
 export interface Book {
   id: string;
