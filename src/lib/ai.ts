@@ -1,6 +1,5 @@
-// AI service - calls the backend API which proxies to Claude API
-// 5 minute timeout for long AI generation tasks
-const AI_TIMEOUT_MS = 5 * 60 * 1000;
+// AI service - calls the backend API which uses Claude for book analysis
+const AI_TIMEOUT_MS = 60 * 1000; // 60 second timeout
 
 export async function generateBookContent(
   title: string,
@@ -25,7 +24,7 @@ export async function generateBookContent(
 
     if (!res.ok) {
       const errorBody = await res.text().catch(() => '');
-      let errorMsg = 'Failed to generate book content';
+      let errorMsg = '生成失败';
       try {
         const errJson = JSON.parse(errorBody);
         if (errJson.error) errorMsg = errJson.error;
@@ -35,96 +34,15 @@ export async function generateBookContent(
       throw new Error(errorMsg);
     }
 
-    const contentType = res.headers.get('content-type') || '';
-
-    // Direct JSON response (error or fallback)
-    if (contentType.includes('application/json')) {
-      return res.json();
+    return res.json();
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('生成超时，请重试');
     }
-
-    // SSE stream from Anthropic API (proxied through our edge function)
-    // Parse SSE events client-side and accumulate the text
-    const fullText = await parseSSEStream(res);
-
-    // Parse the accumulated text as JSON
-    let responseText = fullText.trim();
-    if (responseText.startsWith('```')) {
-      responseText = responseText
-        .replace(/^```(?:json)?\s*\n?/, '')
-        .replace(/\n?```\s*$/, '');
-    }
-
-    let result;
-    try {
-      result = JSON.parse(responseText);
-    } catch {
-      // Try to extract JSON object from the response
-      const jsonMatch = responseText.match(/\{[\s\S]*\}$/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('AI 返回的内容格式无效，请重试');
-      }
-    }
-
-    return {
-      summary: result.summary || '',
-      content: '',
-      oneSentenceSummary: result.oneSentenceSummary || '',
-      category: result.category || '文学小说',
-      htmlContent: result.htmlContent || '',
-    };
+    throw err;
   } finally {
     clearTimeout(timeoutId);
   }
-}
-
-async function parseSSEStream(res: Response): Promise<string> {
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let fullText = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6);
-      if (data === '[DONE]') continue;
-
-      try {
-        const event = JSON.parse(data);
-        if (
-          event.type === 'content_block_delta' &&
-          event.delta?.type === 'text_delta'
-        ) {
-          fullText += event.delta.text;
-        }
-        // Check for API errors in the stream
-        if (event.type === 'error') {
-          throw new Error(`Claude API error: ${event.error?.message || 'Unknown error'}`);
-        }
-      } catch (e) {
-        if (e instanceof Error && e.message.startsWith('Claude API error:')) {
-          throw e;
-        }
-        // Skip unparseable SSE events
-      }
-    }
-  }
-
-  if (!fullText) {
-    throw new Error('AI 未返回任何内容，请重试');
-  }
-
-  return fullText;
 }
 
 export async function processDataLab(

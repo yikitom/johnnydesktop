@@ -5,3 +5,7 @@
 [functions]
   external_node_modules = ["@anthropic-ai/sdk"]
   node_bundler = "esbuild"
+
+# Extend serverless function timeout for AI generation
+[functions."api/ai/book"]
+  timeout = 60
