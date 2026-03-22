@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Known English titles for better search
+// Known English titles for better search on non-Chinese sources
 const KNOWN_TRANSLATIONS: Record<string, string> = {
   '思考快与慢': 'Thinking Fast and Slow',
   '思考，快与慢': 'Thinking Fast and Slow',
@@ -20,20 +20,16 @@ const KNOWN_TRANSLATIONS: Record<string, string> = {
   '原则': 'Principles',
 };
 
-// Normalize for comparison: lowercase, remove punctuation/spaces
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
 }
 
-// Check if the API result title is a reasonable match for the requested title
 function titleMatches(resultTitle: string, requestedTitle: string, englishTitle?: string): boolean {
   const normResult = normalize(resultTitle);
   const normRequested = normalize(requestedTitle);
 
-  // Direct match (Chinese or same-language)
   if (normResult.includes(normRequested) || normRequested.includes(normResult)) return true;
 
-  // English title match
   if (englishTitle) {
     const normEnglish = normalize(englishTitle);
     if (normResult.includes(normEnglish) || normEnglish.includes(normResult)) return true;
@@ -42,107 +38,74 @@ function titleMatches(resultTitle: string, requestedTitle: string, englishTitle?
   return false;
 }
 
-// Fetch with timeout helper
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 6000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    return res;
+    return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Amazon: search for book cover with title verification
-async function searchAmazon(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
+// ---- Source 1: Douban (best for Chinese books) ----
+// Uses the internal JSON search endpoint that returns cover_url directly
+async function searchDouban(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
   try {
-    const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(query + ' book')}&i=stripbooks`;
-    const res = await fetchWithTimeout(searchUrl, {
+    const url = `https://book.douban.com/j/search?q=${encodeURIComponent(query)}`;
+    const res = await fetchWithTimeout(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://book.douban.com/',
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
       },
     });
     if (!res.ok) return null;
-    const html = await res.text();
-
-    // Find img tags with alt text matching our title
-    const imgTagRegex = /<img[^>]*alt="([^"]*)"[^>]*src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"[^>]*>/g;
-    let match;
-    while ((match = imgTagRegex.exec(html)) !== null) {
-      const [, altText, imgUrl] = match;
-      if (titleMatches(altText, requestedTitle, englishTitle)) {
-        return imgUrl.replace(/\._[A-Z][A-Z0-9_,]+_\./, '.');
+    const text = await res.text();
+    // Response could be JSON array or object with items/data
+    const items: Array<{ title?: string; cover_url?: string }> = [];
+    try {
+      const json = JSON.parse(text);
+      if (Array.isArray(json)) {
+        items.push(...json);
+      } else if (json.items) {
+        items.push(...json.items);
+      } else if (json.data) {
+        items.push(...json.data);
       }
+    } catch {
+      return null;
     }
-
-    // Also try src before alt order
-    const imgTagRegex2 = /<img[^>]*src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"[^>]*alt="([^"]*)"[^>]*>/g;
-    while ((match = imgTagRegex2.exec(html)) !== null) {
-      const [, imgUrl, altText] = match;
-      if (titleMatches(altText, requestedTitle, englishTitle)) {
-        return imgUrl.replace(/\._[A-Z][A-Z0-9_,]+_\./, '.');
-      }
-    }
-  } catch { /* skip */ }
-  return null;
-}
-
-// JD.com: search for book cover with title verification
-async function searchJD(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
-  try {
-    const searchUrl = `https://search.jd.com/Search?keyword=${encodeURIComponent(query)}&enc=utf-8&book=y`;
-    const res = await fetchWithTimeout(searchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      },
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-
-    // Extract product blocks
-    const itemRegex = /<li[^>]*class="gl-item"[^>]*>[\s\S]*?<\/li>/g;
-    const items = html.match(itemRegex) || [];
 
     for (const item of items.slice(0, 5)) {
-      const titleMatch = item.match(/<em>([^<]*(?:<[^>]*>[^<]*)*)<\/em>/);
-      const itemTitle = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, '').trim() : '';
+      // Strip HTML tags from title if present
+      const itemTitle = (item.title || '').replace(/<[^>]*>/g, '').trim();
       if (!itemTitle || !titleMatches(itemTitle, requestedTitle, englishTitle)) continue;
-
-      const imgMatch = item.match(/data-lazy-img="([^"]+)"/) || item.match(/src="(\/\/img\d+\.360buyimg\.com[^"]+)"/);
-      if (imgMatch) {
-        let url = imgMatch[1];
-        if (url.startsWith('//')) url = 'https:' + url;
-        return url.replace(/\/s\d+x\d+_/, '/').replace(/\/n\d+\//, '/n1/');
+      if (item.cover_url) {
+        // Return large version of cover
+        return item.cover_url.replace(/\/s\w+\//, '/l/');
       }
     }
   } catch { /* skip */ }
   return null;
 }
 
-// Open Library: structured API with title verification
-async function searchOpenLibrary(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
+// ---- Source 2: Bookcover API (Goodreads aggregator) ----
+// https://github.com/w3slley/bookcover-api
+async function searchBookcoverAPI(title: string, author: string): Promise<string | null> {
   try {
+    const params = new URLSearchParams({ book_title: title, author_name: author });
     const res = await fetchWithTimeout(
-      `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5&fields=title,cover_i`
+      `https://bookcover.longitood.com/bookcover?${params.toString()}`
     );
     if (!res.ok) return null;
     const data = await res.json();
-
-    for (const doc of data.docs || []) {
-      if (!doc.cover_i) continue;
-      if (!titleMatches(doc.title || '', requestedTitle, englishTitle)) continue;
-      return `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
-    }
+    if (data.url) return data.url;
   } catch { /* skip */ }
   return null;
 }
 
-// Google Books: structured API with title verification
+// ---- Source 3: Google Books API ----
 async function searchGoogleBooks(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
   try {
     const res = await fetchWithTimeout(
@@ -164,11 +127,30 @@ async function searchGoogleBooks(query: string, requestedTitle: string, englishT
   return null;
 }
 
-// Race multiple promises, return the first non-null result
+// ---- Source 4: Open Library ----
+async function searchOpenLibrary(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(
+      `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5&fields=title,cover_i`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    for (const doc of data.docs || []) {
+      if (!doc.cover_i) continue;
+      if (!titleMatches(doc.title || '', requestedTitle, englishTitle)) continue;
+      return `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
+    }
+  } catch { /* skip */ }
+  return null;
+}
+
+// Race: return first non-null result, or null if all fail
 async function raceForResult(promises: Promise<string | null>[]): Promise<string | null> {
   return new Promise((resolve) => {
     let settled = false;
     let pending = promises.length;
+    if (pending === 0) { resolve(null); return; }
 
     for (const p of promises) {
       p.then((result) => {
@@ -197,22 +179,29 @@ export async function GET(req: NextRequest) {
   const cleanTitle = title.replace(/[《》""「」]/g, '');
   const englishTitle = KNOWN_TRANSLATIONS[cleanTitle];
 
-  // Build search queries
-  const queries: string[] = [];
-  if (englishTitle) queries.push(englishTitle);
-  if (author) queries.push(`${cleanTitle} ${author}`);
-  queries.push(cleanTitle);
+  // All searches fire in parallel — first valid result wins
+  const searches: Promise<string | null>[] = [];
 
-  // Fire ALL sources × ALL queries in parallel, take the first match
-  const allSearches: Promise<string | null>[] = [];
-  const sources = [searchGoogleBooks, searchOpenLibrary, searchAmazon, searchJD];
+  // Douban: best for Chinese books (try Chinese title, and with author)
+  searches.push(searchDouban(cleanTitle, cleanTitle, englishTitle));
+  if (author) searches.push(searchDouban(`${cleanTitle} ${author}`, cleanTitle, englishTitle));
 
-  for (const searchFn of sources) {
-    for (const q of queries) {
-      allSearches.push(searchFn(q, cleanTitle, englishTitle));
-    }
+  // Bookcover API (Goodreads): try English title if available, then original
+  if (englishTitle) {
+    searches.push(searchBookcoverAPI(englishTitle, author));
   }
+  searches.push(searchBookcoverAPI(cleanTitle, author));
 
-  const cover = await raceForResult(allSearches);
+  // Google Books: try English, title+author, title alone
+  if (englishTitle) searches.push(searchGoogleBooks(englishTitle, cleanTitle, englishTitle));
+  if (author) searches.push(searchGoogleBooks(`${cleanTitle} ${author}`, cleanTitle, englishTitle));
+  searches.push(searchGoogleBooks(cleanTitle, cleanTitle, englishTitle));
+
+  // Open Library: try English, title+author, title alone
+  if (englishTitle) searches.push(searchOpenLibrary(englishTitle, cleanTitle, englishTitle));
+  if (author) searches.push(searchOpenLibrary(`${cleanTitle} ${author}`, cleanTitle, englishTitle));
+  searches.push(searchOpenLibrary(cleanTitle, cleanTitle, englishTitle));
+
+  const cover = await raceForResult(searches);
   return NextResponse.json({ coverUrl: cover });
 }
