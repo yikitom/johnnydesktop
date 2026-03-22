@@ -74,17 +74,29 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
     );
   }
 
-  // Default cover with category gradient
+  // Default cover with category gradient + book title
+  const cleanTitle = title.replace(/[《》]/g, '');
   return (
-    <div className={`w-[130px] h-[180px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-center p-2`}>
+    <div className={`w-[130px] h-[180px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-between p-3`}>
       {loading ? (
-        <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+        <div className="flex-1 flex items-center justify-center w-full">
+          <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+        </div>
       ) : (
         <>
-          <span className="text-4xl mb-2">{style.emoji}</span>
-          <span className="text-xs text-white/90 font-medium text-center leading-tight line-clamp-2">
-            {title.replace(/[《》]/g, '')}
-          </span>
+          <div className="w-full border-b border-white/20 pb-1 mb-1">
+            <span className="text-[10px] text-white/60 font-light tracking-wider uppercase">{category || 'BOOK'}</span>
+          </div>
+          <div className="flex-1 flex items-center justify-center">
+            <span className="text-sm text-white font-bold text-center leading-snug line-clamp-4">
+              {cleanTitle}
+            </span>
+          </div>
+          <div className="w-full border-t border-white/20 pt-1">
+            <span className="text-[10px] text-white/70 font-medium text-center block truncate">
+              {author}
+            </span>
+          </div>
         </>
       )}
     </div>
