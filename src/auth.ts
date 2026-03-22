@@ -31,6 +31,13 @@ if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
+      authorization: {
+        params: {
+          prompt: 'consent',
+          access_type: 'offline',
+          response_type: 'code',
+        },
+      },
     })
   );
 }
@@ -38,66 +45,66 @@ if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers,
   trustHost: true,
+  debug: process.env.NODE_ENV === 'development',
   callbacks: {
     async signIn({ user, account }) {
-      // Sync user to Airtable via direct API call (not self-fetch)
-      const apiKey = process.env.AIRTABLE_API_KEY;
-      const baseId = process.env.AIRTABLE_BASE_ID || 'appBn4rAsuq14VeDf';
-      if (apiKey && user.email) {
-        try {
+      // Sync user to Airtable - wrapped in try/catch to never block login
+      try {
+        const apiKey = process.env.AIRTABLE_API_KEY;
+        const baseId = process.env.AIRTABLE_BASE_ID || 'appBn4rAsuq14VeDf';
+        if (apiKey && user.email) {
           const airtableUrl = `https://api.airtable.com/v0/${baseId}/jd_users`;
           const headers = {
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
           };
 
-          // Check if user exists
           const filterFormula = `{email} = "${user.email}"`;
           const findRes = await fetch(
             `${airtableUrl}?filterByFormula=${encodeURIComponent(filterFormula)}&maxRecords=1`,
             { headers }
           );
-          const findData = await findRes.json();
-          const existing = findData.records?.[0];
-          const now = new Date().toISOString();
 
-          if (existing) {
-            // Update lastLoginAt
-            await fetch(`${airtableUrl}/${existing.id}`, {
-              method: 'PATCH',
-              headers,
-              body: JSON.stringify({
-                fields: {
-                  name: user.name || existing.fields.name,
-                  avatar: user.image || existing.fields.avatar,
-                  googleId: account?.providerAccountId || existing.fields.googleId,
-                  lastLoginAt: now,
-                },
-              }),
-            });
-          } else {
-            // Create new user
-            await fetch(airtableUrl, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                fields: {
-                  email: user.email,
-                  name: user.name || user.email.split('@')[0],
-                  avatar: user.image || '',
-                  googleId: account?.providerAccountId || '',
-                  provider: account?.provider || 'email',
-                  lastLoginAt: now,
-                  createdAt: now,
-                  status: 'active',
-                },
-              }),
-            });
+          if (findRes.ok) {
+            const findData = await findRes.json();
+            const existing = findData.records?.[0];
+            const now = new Date().toISOString();
+
+            if (existing) {
+              await fetch(`${airtableUrl}/${existing.id}`, {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify({
+                  fields: {
+                    name: user.name || existing.fields.name,
+                    avatar: user.image || existing.fields.avatar,
+                    googleId: account?.providerAccountId || existing.fields.googleId,
+                    lastLoginAt: now,
+                  },
+                }),
+              });
+            } else {
+              await fetch(airtableUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  fields: {
+                    email: user.email,
+                    name: user.name || user.email.split('@')[0],
+                    avatar: user.image || '',
+                    googleId: account?.providerAccountId || '',
+                    provider: account?.provider || 'email',
+                    lastLoginAt: now,
+                    createdAt: now,
+                    status: 'active',
+                  },
+                }),
+              });
+            }
           }
-        } catch (e) {
-          console.error('Failed to sync user to Airtable:', e);
-          // Don't block login if Airtable sync fails
         }
+      } catch (e) {
+        console.error('Airtable sync error (non-blocking):', e);
       }
       return true;
     },
@@ -122,6 +129,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   pages: {
     signIn: '/login',
+    error: '/login',
   },
   session: {
     strategy: 'jwt',
