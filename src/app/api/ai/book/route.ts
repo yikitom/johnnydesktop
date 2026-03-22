@@ -1,28 +1,43 @@
 import { NextRequest } from 'next/server';
 
-// Use default Node.js runtime (NOT edge) with non-streaming API call.
-// Netlify serverless functions have a 26s timeout on Pro, 10s on free.
-// We use a concise prompt + limited tokens to fit within the timeout.
+// Non-streaming serverless function using Claude tool_use for reliable JSON output
 
-const DEEP_BOOK_DECONSTRUCTION_PROMPT = `You are a book analyst. Analyze the given book concisely.
+const BOOK_ANALYSIS_TOOL = {
+  name: 'save_book_analysis',
+  description: 'Save the book analysis result',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      category: {
+        type: 'string' as const,
+        enum: ['文学小说', '商业管理', '科技创新', '心理学', '历史人文', '哲学思想', '自我成长', '社会科学', '艺术设计', '科普读物'],
+        description: 'Book category',
+      },
+      oneSentenceSummary: {
+        type: 'string' as const,
+        description: 'One-sentence summary in Chinese (40-80 chars)',
+      },
+      summary: {
+        type: 'string' as const,
+        description: 'Markdown summary in Chinese (200-400 chars): author bio, themes, insights, audience',
+      },
+      htmlContent: {
+        type: 'string' as const,
+        description: 'Complete self-contained HTML document with embedded CSS for the book analysis report',
+      },
+    },
+    required: ['category', 'oneSentenceSummary', 'summary', 'htmlContent'],
+  },
+};
 
-Respond with a JSON object containing:
-- "category": One of: ["文学小说", "商业管理", "科技创新", "心理学", "历史人文", "哲学思想", "自我成长", "社会科学", "艺术设计", "科普读物"]
-- "oneSentenceSummary": One-sentence summary in Chinese (40-80 chars)
-- "summary": Markdown summary in Chinese (200-400 chars): author bio, themes, insights, audience
-- "htmlContent": Self-contained HTML with embedded CSS. Keep markup minimal.
+const SYSTEM_PROMPT = `You are a book analyst. When given a book title and author, analyze it and call the save_book_analysis tool with your results.
 
-htmlContent sections (keep each BRIEF):
-1. Hero: title, author, category
-2. Author & Background (2 sentences)
-3. Core Thesis (1 paragraph)
-4. Key Insights (3-4 bullet points)
-5. Practical Takeaways (3 bullet points)
-6. Who Should Read & Final Verdict (2 sentences)
-
-HTML: indigo/purple gradient, card layout, responsive, <style> tag, footer "由 AI 深度解读生成 · JohnnyDesktop". Minimize CSS - reuse classes, no redundancy.
-
-Output ONLY valid JSON. No markdown blocks. Compact htmlContent.`;
+For htmlContent, create a complete HTML document with:
+- Indigo/purple gradient theme, card layout, responsive design
+- All CSS in a <style> tag, use single quotes in HTML attributes where possible
+- Sections: Hero (title/author/category), Author Background (2 sentences), Core Thesis, Key Insights (3-4 points), Practical Takeaways (3 points), Final Verdict
+- Footer: "由 AI 深度解读生成 · JohnnyDesktop"
+- Keep HTML compact and minimal`;
 
 export async function POST(req: NextRequest) {
   const { title, author = '' } = await req.json();
@@ -44,7 +59,6 @@ export async function POST(req: NextRequest) {
     : `Analyze: "${title}"`;
 
   try {
-    // Non-streaming call - simpler and faster
     const apiResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -54,12 +68,12 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 3000,
+        max_tokens: 4000,
+        system: SYSTEM_PROMPT,
+        tools: [BOOK_ANALYSIS_TOOL],
+        tool_choice: { type: 'tool', name: 'save_book_analysis' },
         messages: [
-          {
-            role: 'user',
-            content: `${DEEP_BOOK_DECONSTRUCTION_PROMPT}\n\n${userMessage}`,
-          },
+          { role: 'user', content: userMessage },
         ],
       }),
     });
@@ -74,30 +88,21 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await apiResponse.json();
-    let responseText = (data.content?.[0]?.text || '').trim();
 
-    // Strip markdown code blocks if present
-    if (responseText.startsWith('```')) {
-      responseText = responseText
-        .replace(/^```(?:json)?\s*\n?/, '')
-        .replace(/\n?```\s*$/, '');
+    // Extract tool_use result - guaranteed valid JSON by the API
+    const toolUse = data.content?.find(
+      (block: { type: string }) => block.type === 'tool_use'
+    );
+
+    if (!toolUse?.input) {
+      console.error('No tool_use in response:', JSON.stringify(data.content));
+      return Response.json(
+        { error: 'AI 未返回有效结果，请重试' },
+        { status: 502 }
+      );
     }
 
-    let result;
-    try {
-      result = JSON.parse(responseText);
-    } catch {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}$/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        console.error('Failed to parse response:', responseText.slice(0, 500));
-        return Response.json(
-          { error: 'AI 返回格式错误，请重试' },
-          { status: 502 }
-        );
-      }
-    }
+    const result = toolUse.input;
 
     return Response.json({
       summary: result.summary || '',
