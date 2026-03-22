@@ -1,41 +1,75 @@
 'use client';
 
-import { useState } from 'react';
-import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { signIn, useSession } from 'next-auth/react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { status } = useSession();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (status === 'authenticated') {
+      router.push('/reading');
+    }
+  }, [status, router]);
+
+  // Handle OAuth error callbacks
+  useEffect(() => {
+    const errorParam = searchParams.get('error');
+    if (errorParam) {
+      const errorMessages: Record<string, string> = {
+        OAuthSignin: 'Google 登录初始化失败，请检查 OAuth 配置',
+        OAuthCallback: 'Google 登录回调失败',
+        OAuthCreateAccount: '无法创建账号',
+        OAuthAccountNotLinked: '该邮箱已关联其他登录方式',
+        Configuration: '服务器配置错误，请联系管理员设置 AUTH_SECRET 和 Google OAuth',
+        AccessDenied: '访问被拒绝',
+        Default: '登录失败，请重试',
+      };
+      setError(errorMessages[errorParam] || errorMessages.Default);
+    }
+  }, [searchParams]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const result = await signIn('credentials', {
-      email,
-      password,
-      redirect: false,
-    });
+    try {
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      });
 
-    if (result?.error) {
-      setError('邮箱或密码错误');
-    } else {
-      router.push('/reading');
-      router.refresh();
+      if (result?.error) {
+        setError('邮箱或密码错误');
+      } else {
+        router.push('/reading');
+        router.refresh();
+      }
+    } catch {
+      setError('登录请求失败，请重试');
     }
     setLoading(false);
   };
 
   const handleGoogleLogin = () => {
     setGoogleLoading(true);
+    setError('');
     signIn('google', { callbackUrl: '/reading' });
   };
+
+  if (status === 'authenticated') return null;
 
   return (
     <div className="min-h-screen bg-[#0a0a14] flex">
@@ -67,6 +101,13 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold text-white">欢迎回来</h1>
             <p className="text-white/40 mt-1 text-sm">登录以继续使用 AI 工作台</p>
           </div>
+
+          {/* Error Display */}
+          {error && (
+            <div className="mb-5 text-red-400 text-sm bg-red-400/10 px-4 py-3 rounded-xl border border-red-400/20">
+              {error}
+            </div>
+          )}
 
           {/* Google Login */}
           <button
@@ -122,10 +163,6 @@ export default function LoginPage() {
               />
             </div>
 
-            {error && (
-              <p className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded-lg">{error}</p>
-            )}
-
             <button
               type="submit"
               disabled={loading}
@@ -141,5 +178,19 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0a0a14] flex items-center justify-center">
+        <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold animate-pulse">
+          AI
+        </div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
