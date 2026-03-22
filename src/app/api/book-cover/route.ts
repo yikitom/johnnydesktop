@@ -30,8 +30,10 @@ function titleMatches(resultTitle: string, requestedTitle: string, englishTitle?
   const normResult = normalize(resultTitle);
   const normRequested = normalize(requestedTitle);
 
+  // Direct match (Chinese or same-language)
   if (normResult.includes(normRequested) || normRequested.includes(normResult)) return true;
 
+  // English title match
   if (englishTitle) {
     const normEnglish = normalize(englishTitle);
     if (normResult.includes(normEnglish) || normEnglish.includes(normResult)) return true;
@@ -52,7 +54,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
-// Amazon: search for book cover with title verification via structured data
+// Amazon: search for book cover with title verification
 async function searchAmazon(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
   try {
     const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(query + ' book')}&i=stripbooks`;
@@ -66,31 +68,20 @@ async function searchAmazon(query: string, requestedTitle: string, englishTitle?
     if (!res.ok) return null;
     const html = await res.text();
 
-    // Extract product blocks: each contains a title and an image
-    // Match data-component-type="s-search-result" blocks or individual product entries
-    const productRegex = /<div[^>]*data-asin="[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g;
-    const products = html.match(productRegex) || [];
-
-    for (const block of products.slice(0, 5)) {
-      // Extract title from alt text or aria-label
-      const titleMatch = block.match(/alt="([^"]+)"/);
-      const blockTitle = titleMatch ? titleMatch[1] : '';
-
-      if (!blockTitle || !titleMatches(blockTitle, requestedTitle, englishTitle)) continue;
-
-      // Extract image URL from this specific product block
-      const imgMatch = block.match(/https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9+_.-]+\.(?:jpg|png)/);
-      if (imgMatch) {
-        // Return high-res version
-        return imgMatch[0].replace(/\._[A-Z][A-Z0-9_,]+_\./, '.');
-      }
-    }
-
-    // Simpler fallback: find img tags with alt text matching our title
+    // Find img tags with alt text matching our title
     const imgTagRegex = /<img[^>]*alt="([^"]*)"[^>]*src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"[^>]*>/g;
     let match;
     while ((match = imgTagRegex.exec(html)) !== null) {
       const [, altText, imgUrl] = match;
+      if (titleMatches(altText, requestedTitle, englishTitle)) {
+        return imgUrl.replace(/\._[A-Z][A-Z0-9_,]+_\./, '.');
+      }
+    }
+
+    // Also try src before alt order
+    const imgTagRegex2 = /<img[^>]*src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"[^>]*alt="([^"]*)"[^>]*>/g;
+    while ((match = imgTagRegex2.exec(html)) !== null) {
+      const [, imgUrl, altText] = match;
       if (titleMatches(altText, requestedTitle, englishTitle)) {
         return imgUrl.replace(/\._[A-Z][A-Z0-9_,]+_\./, '.');
       }
@@ -113,24 +104,19 @@ async function searchJD(query: string, requestedTitle: string, englishTitle?: st
     if (!res.ok) return null;
     const html = await res.text();
 
-    // JD product list items contain title in em/a tags and images in img tags
-    // Extract product blocks from the goods list
+    // Extract product blocks
     const itemRegex = /<li[^>]*class="gl-item"[^>]*>[\s\S]*?<\/li>/g;
     const items = html.match(itemRegex) || [];
 
     for (const item of items.slice(0, 5)) {
-      // Extract title text
       const titleMatch = item.match(/<em>([^<]*(?:<[^>]*>[^<]*)*)<\/em>/);
       const itemTitle = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, '').trim() : '';
-
       if (!itemTitle || !titleMatches(itemTitle, requestedTitle, englishTitle)) continue;
 
-      // Extract image URL - JD uses data-lazy-img or src
       const imgMatch = item.match(/data-lazy-img="([^"]+)"/) || item.match(/src="(\/\/img\d+\.360buyimg\.com[^"]+)"/);
       if (imgMatch) {
         let url = imgMatch[1];
         if (url.startsWith('//')) url = 'https:' + url;
-        // Get larger image
         return url.replace(/\/s\d+x\d+_/, '/').replace(/\/n\d+\//, '/n1/');
       }
     }
@@ -178,6 +164,30 @@ async function searchGoogleBooks(query: string, requestedTitle: string, englishT
   return null;
 }
 
+// Race multiple promises, return the first non-null result
+async function raceForResult(promises: Promise<string | null>[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let pending = promises.length;
+
+    for (const p of promises) {
+      p.then((result) => {
+        if (settled) return;
+        if (result) {
+          settled = true;
+          resolve(result);
+        } else {
+          pending--;
+          if (pending === 0) resolve(null);
+        }
+      }).catch(() => {
+        pending--;
+        if (!settled && pending === 0) resolve(null);
+      });
+    }
+  });
+}
+
 export async function GET(req: NextRequest) {
   const title = req.nextUrl.searchParams.get('title') || '';
   const author = req.nextUrl.searchParams.get('author') || '';
@@ -187,23 +197,22 @@ export async function GET(req: NextRequest) {
   const cleanTitle = title.replace(/[《》""「」]/g, '');
   const englishTitle = KNOWN_TRANSLATIONS[cleanTitle];
 
-  // Search queries to try
+  // Build search queries
   const queries: string[] = [];
   if (englishTitle) queries.push(englishTitle);
-  queries.push(`${cleanTitle} ${author}`);
+  if (author) queries.push(`${cleanTitle} ${author}`);
   queries.push(cleanTitle);
 
-  // Strategy: try Amazon + JD first (best cover quality), then Open Library, then Google Books
-  // For each source, try all query variants before moving to next source
-  const sources = [searchAmazon, searchJD, searchOpenLibrary, searchGoogleBooks];
+  // Fire ALL sources × ALL queries in parallel, take the first match
+  const allSearches: Promise<string | null>[] = [];
+  const sources = [searchGoogleBooks, searchOpenLibrary, searchAmazon, searchJD];
 
   for (const searchFn of sources) {
     for (const q of queries) {
-      const cover = await searchFn(q, cleanTitle, englishTitle);
-      if (cover) return NextResponse.json({ coverUrl: cover });
+      allSearches.push(searchFn(q, cleanTitle, englishTitle));
     }
   }
 
-  // No verified cover found
-  return NextResponse.json({ coverUrl: null });
+  const cover = await raceForResult(allSearches);
+  return NextResponse.json({ coverUrl: cover });
 }
