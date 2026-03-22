@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
 
       const result = await callClaude(
         apiKey,
-        'claude-sonnet-4-6',
+        'claude-haiku-4-5-20251001',
         4000,
         `You are executing the deep-book-deconstruction methodology — a comprehensive, publication-quality book analysis framework.
 
@@ -209,7 +209,7 @@ Make it visually stunning and intellectually rich.`,
 
       const result = await callClaude(
         apiKey,
-        'claude-sonnet-4-6',
+        'claude-haiku-4-5-20251001',
         4000,
         `You are executing the deep-book-deconstruction methodology — a comprehensive, publication-quality book analysis framework.
 
