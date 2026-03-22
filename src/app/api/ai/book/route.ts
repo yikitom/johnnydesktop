@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 
-// Allow streaming responses to run longer
-export const maxDuration = 300;
+// Use edge runtime to avoid Netlify serverless function timeout (10-26s limit)
+// Edge functions support streaming responses for up to 30 minutes
+export const runtime = 'edge';
 
 const DEEP_BOOK_DECONSTRUCTION_PROMPT = `You are a world-class book analyst and literary critic. Your task is to perform a "Deep Book Deconstruction" — a comprehensive, insightful analysis of the given book.
 
@@ -45,17 +45,12 @@ export async function POST(req: NextRequest) {
   const { title, author = '' } = await req.json();
 
   if (!title) {
-    return new Response(JSON.stringify({ error: 'Title is required' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return Response.json({ error: 'Title is required' }, { status: 400 });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify(generateFallback(title, author)), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return Response.json(generateFallback(title, author));
   }
 
   const userMessage = author
@@ -63,35 +58,72 @@ export async function POST(req: NextRequest) {
     : `Please perform a Deep Book Deconstruction for: "${title}"`;
 
   try {
-    const anthropic = new Anthropic({ apiKey });
-
-    // Use streaming to avoid serverless function timeout
-    const stream = await anthropic.messages.stream({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 12000,
-      messages: [
-        {
-          role: 'user',
-          content: `${DEEP_BOOK_DECONSTRUCTION_PROMPT}\n\n${userMessage}`,
-        },
-      ],
+    // Use fetch directly for edge runtime compatibility (no Node.js SDK dependency)
+    const apiResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 12000,
+        stream: true,
+        messages: [
+          {
+            role: 'user',
+            content: `${DEEP_BOOK_DECONSTRUCTION_PROMPT}\n\n${userMessage}`,
+          },
+        ],
+      }),
     });
 
-    // Create a streaming response to keep the connection alive
+    if (!apiResponse.ok) {
+      const errBody = await apiResponse.text();
+      console.error('Anthropic API error:', apiResponse.status, errBody);
+      return Response.json(generateFallback(title, author));
+    }
+
+    // Stream the response to keep the connection alive
     const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    const reader = apiResponse.body!.getReader();
+
     const readable = new ReadableStream({
       async start(controller) {
         let fullText = '';
+        let buffer = '';
 
         try {
-          for await (const event of stream) {
-            if (
-              event.type === 'content_block_delta' &&
-              event.delta.type === 'text_delta'
-            ) {
-              fullText += event.delta.text;
-              // Send keepalive chunks to prevent timeout
-              controller.enqueue(encoder.encode(' '));
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Parse SSE events from the Anthropic API
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+
+              try {
+                const event = JSON.parse(data);
+                if (
+                  event.type === 'content_block_delta' &&
+                  event.delta?.type === 'text_delta'
+                ) {
+                  fullText += event.delta.text;
+                  // Send keepalive space to keep the HTTP connection alive
+                  controller.enqueue(encoder.encode(' '));
+                }
+              } catch {
+                // Skip unparseable SSE events
+              }
             }
           }
 
@@ -107,7 +139,6 @@ export async function POST(req: NextRequest) {
           try {
             result = JSON.parse(responseText);
           } catch {
-            // If JSON parse fails, try to extract JSON from the text
             const jsonMatch = responseText.match(/\{[\s\S]*\}$/);
             if (jsonMatch) {
               result = JSON.parse(jsonMatch[0]);
@@ -139,15 +170,13 @@ export async function POST(req: NextRequest) {
     return new Response(readable, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'Transfer-Encoding': 'chunked',
         'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
       },
     });
   } catch (error) {
-    console.error('Claude API init error:', error);
-    return new Response(JSON.stringify(generateFallback(title, author)), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('Claude API error:', error);
+    return Response.json(generateFallback(title, author));
   }
 }
 
@@ -216,7 +245,7 @@ function generateFallbackHtml(title: string, author: string, category: string): 
       <div class="meta">${authorLine}<span class="tag">${category}</span></div>
     </div>
     <div class="content">
-      <div class="notice">⚠️ 当前为模板内容。配置 ANTHROPIC_API_KEY 后，将使用 AI 生成深度书籍解读报告。</div>
+      <div class="notice">当前为模板内容。配置 ANTHROPIC_API_KEY 后，将使用 AI 生成深度书籍解读报告。</div>
       <div class="section">
         <h2>关于本书</h2>
         <p>《${title}》${author ? `由${author}所著，` : ''}是一部值得深入阅读的作品。本报告将在 AI 服务配置完成后，提供完整的深度解读内容。</p>
