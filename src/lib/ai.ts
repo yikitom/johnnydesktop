@@ -94,11 +94,20 @@ async function fetchDeepContent(
       try {
         const event = JSON.parse(data);
 
-        // Handle text content deltas
+        // Handle text content deltas (Claude's text output)
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           const text = event.delta.text || '';
           accumulated += text;
           onChunk?.(text);
+        }
+
+        // Handle code execution result (skill may output via code execution)
+        if (event.type === 'content_block_start' && event.content_block?.type === 'code_execution_result') {
+          const output = event.content_block.output || '';
+          if (output.includes('<html') || output.includes('<!DOCTYPE')) {
+            accumulated += output;
+            onChunk?.(output);
+          }
         }
 
         // Handle errors

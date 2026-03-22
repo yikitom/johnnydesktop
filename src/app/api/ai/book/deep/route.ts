@@ -1,6 +1,172 @@
 // Edge Runtime - supports long-running streaming with no timeout
-// Uses Anthropic Skills API (beta) with deep-book-deconstruction skill
+// Uses Anthropic Skills API (beta) with deep-book-deconstruction custom skill
 export const runtime = 'edge';
+
+const ANTHROPIC_API = 'https://api.anthropic.com';
+const BETA_HEADERS = 'code-execution-2025-08-25,skills-2025-10-02';
+const SKILL_NAME = 'deep-book-deconstruction';
+
+// Cache skill_id in module scope (persists across requests in the same edge instance)
+let cachedSkillId: string | null = null;
+
+function apiHeaders(apiKey: string) {
+  return {
+    'Content-Type': 'application/json',
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': BETA_HEADERS,
+  };
+}
+
+// Find existing skill or create a new one
+async function ensureSkill(apiKey: string): Promise<string> {
+  // Return cached skill_id if available
+  if (cachedSkillId) return cachedSkillId;
+
+  // Check env var first
+  const envSkillId = process.env.SKILL_DEEP_BOOK_ID;
+  if (envSkillId) {
+    cachedSkillId = envSkillId;
+    return envSkillId;
+  }
+
+  // List existing skills to find ours
+  const listRes = await fetch(`${ANTHROPIC_API}/v1/skills?beta=true&source=custom`, {
+    headers: apiHeaders(apiKey),
+  });
+
+  if (listRes.ok) {
+    const listData = await listRes.json();
+    const existing = (listData.data || []).find(
+      (s: { display_title: string | null }) => s.display_title === SKILL_NAME
+    );
+    if (existing) {
+      cachedSkillId = existing.id;
+      return existing.id;
+    }
+  }
+
+  // Create the skill with SKILL.md
+  const skillMd = `---
+name: ${SKILL_NAME}
+description: >
+  Deep Book Deconstruction - A comprehensive methodology for analyzing and
+  deconstructing books into detailed, insightful reports. Produces rich HTML
+  documents with professional styling covering all aspects of a book's content,
+  arguments, and significance. Use this skill when asked to analyze, review,
+  or deconstruct any book.
+---
+
+# Deep Book Deconstruction
+
+You are a world-class book analyst, literary critic, and knowledge synthesizer.
+Your task is to create a comprehensive, publication-quality deconstruction of a book.
+
+## Output Format
+Generate a complete, self-contained HTML document with embedded CSS.
+Use an indigo/purple gradient theme with modern card-based layout and responsive design.
+
+## Required Sections
+
+### 1. Hero Section
+- Book title (large, prominent)
+- Author name
+- Category badge
+- Gradient background
+
+### 2. One-Sentence Essence
+- A powerful, elegant quote-card capturing the book's core message
+- 40-80 Chinese characters
+
+### 3. Author & Context
+- Detailed author biography and credentials
+- Historical/intellectual context of the book's creation
+- The author's unique perspective and what qualifies them
+
+### 4. Core Thesis & Framework
+- The central argument or thesis
+- The intellectual framework or model
+- How the argument is structured
+
+### 5. Chapter-by-Chapter Deconstruction (5-8 chapters)
+- Each chapter gets 2-3 paragraphs of deep analysis
+- Key arguments and evidence presented
+- Notable examples and case studies
+- How each chapter builds on the previous
+
+### 6. Key Insights (5-8 insights)
+- Each insight with a clear title and icon
+- 2-3 paragraphs exploring the insight deeply
+- Real-world implications and applications
+- Why this insight matters
+
+### 7. Practical Applications
+- Concrete, actionable takeaways
+- How to apply the book's ideas in daily life/work
+- Specific exercises or practices
+
+### 8. Critical Perspective
+- Strengths of the book's approach
+- Weaknesses and limitations
+- Potential biases or blind spots
+- How it compares to other works in the field
+
+### 9. Recommended Reading (3-5 books)
+- Related books that complement or contrast
+- Brief description of why each is relevant
+- How they extend or challenge this book's ideas
+
+### 10. Final Verdict
+- Overall assessment with star rating
+- Who should read this book
+- The lasting impact and significance
+
+## Style Guidelines
+- All content in Chinese (中文)
+- Intellectually deep and professionally written
+- Use emoji icons for visual richness
+- CSS in \`<style>\` tag, use single quotes in HTML attributes
+- Mobile-responsive design
+- Footer: "由 AI 深度解读生成 · JohnnyDesktop"
+`;
+
+  // Create FormData with SKILL.md file
+  // For Edge Runtime, we need to build the multipart form manually
+  const boundary = '----SkillUploadBoundary' + Date.now();
+  const body = [
+    `--${boundary}`,
+    `Content-Disposition: form-data; name="display_title"`,
+    '',
+    SKILL_NAME,
+    `--${boundary}`,
+    `Content-Disposition: form-data; name="files"; filename="${SKILL_NAME}/SKILL.md"`,
+    'Content-Type: text/markdown',
+    '',
+    skillMd,
+    `--${boundary}--`,
+  ].join('\r\n');
+
+  const createRes = await fetch(`${ANTHROPIC_API}/v1/skills?beta=true`, {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': BETA_HEADERS,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    },
+    body,
+  });
+
+  if (!createRes.ok) {
+    const err = await createRes.text();
+    console.error('Failed to create skill:', createRes.status, err);
+    throw new Error(`创建 skill 失败: ${err.slice(0, 200)}`);
+  }
+
+  const createData = await createRes.json();
+  cachedSkillId = createData.id;
+  return createData.id;
+}
 
 export async function POST(req: Request) {
   const { title, author = '', metadata } = await req.json();
@@ -11,10 +177,7 @@ export async function POST(req: Request) {
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return Response.json(
-      { error: 'ANTHROPIC_API_KEY 未配置' },
-      { status: 500 }
-    );
+    return Response.json({ error: 'ANTHROPIC_API_KEY 未配置' }, { status: 500 });
   }
 
   const bookRef = author ? `《${title}》（${author}）` : `《${title}》`;
@@ -28,55 +191,34 @@ export async function POST(req: Request) {
 - 章节大纲：${(metadata.chapterOutline || []).map((ch: { title: string; keyPoint: string }, i: number) => `${i + 1}. ${ch.title}: ${ch.keyPoint}`).join('\n')}`
     : '';
 
-  const systemPrompt = `你是一位世界顶级的书籍分析师和文学评论家。请使用 deep-book-deconstruction 技能对书籍进行全面、深入的解构分析。
-
-输出要求：
-- 直接输出一个完整的、自包含的 HTML 文档（从 <!DOCTYPE html> 开始）
-- 所有 CSS 必须在 <style> 标签内（不使用外部链接）
-- 使用靛蓝/紫色渐变主题，现代卡片布局，响应式设计
-- HTML 属性尽量使用单引号
-- 包含以下完整章节：
-  1. 顶部英雄区（书名、作者、分类徽章）
-  2. 一句话精华总结（引用卡片样式）
-  3. 作者背景与创作语境（详细介绍）
-  4. 核心论点与思想框架
-  5. 逐章深度解构（5-8章，每章2-3段深入分析）
-  6. 关键洞见（5-8个，每个配详细解释）
-  7. 实践应用（具体可操作的建议）
-  8. 批判性思考（优势与局限性）
-  9. 延伸阅读推荐（3-5本相关书籍）
-  10. 最终评价与目标读者
-- 页脚："由 AI 深度解读生成 · JohnnyDesktop"
-- 全部内容使用中文
-- 内容要有深度、有洞见、有专业性，不要泛泛而谈
-
-除 HTML 文档外，不要输出任何其他文字。`;
-
-  const userMessage = `请对 ${bookRef} 进行深度解构分析，生成完整的 HTML 报告。${metadataContext}`;
-
   try {
-    // Call Anthropic beta Messages API with container + skills + streaming
-    const apiResponse = await fetch('https://api.anthropic.com/v1/messages?beta=true', {
+    // Ensure the custom skill exists
+    const skillId = await ensureSkill(apiKey);
+
+    // Call Anthropic beta Messages API with container + skills + code_execution + streaming
+    const apiResponse = await fetch(`${ANTHROPIC_API}/v1/messages`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'skills-2025-10-02',
-      },
+      headers: apiHeaders(apiKey),
       body: JSON.stringify({
         model: 'claude-sonnet-4-5-20250514',
         max_tokens: 16000,
         stream: true,
         container: {
           skills: [{
-            skill_id: 'deep-book-deconstruction',
-            type: 'anthropic',
+            skill_id: skillId,
+            type: 'custom',
           }],
         },
-        system: systemPrompt,
+        tools: [{
+          type: 'code_execution_20250825',
+          name: 'code_execution',
+        }],
         messages: [
-          { role: 'user', content: userMessage },
+          {
+            role: 'user',
+            content: `请使用 deep-book-deconstruction 技能对 ${bookRef} 进行全面深度解构分析。
+生成一个完整的、自包含的 HTML 文档报告。直接输出 HTML 代码，不要输出其他文字。${metadataContext}`,
+          },
         ],
       }),
     });
@@ -91,7 +233,6 @@ export async function POST(req: Request) {
     }
 
     // Proxy the SSE stream directly to the client
-    // This keeps the connection alive for the entire generation duration
     return new Response(apiResponse.body, {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -101,9 +242,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error('Skills API error:', error);
-    return Response.json(
-      { error: `Skills API 连接失败: ${error instanceof Error ? error.message : '未知错误'}` },
-      { status: 502 }
-    );
+    const msg = error instanceof Error ? error.message : '未知错误';
+    return Response.json({ error: msg }, { status: 502 });
   }
 }
