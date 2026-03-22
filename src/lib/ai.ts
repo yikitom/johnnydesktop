@@ -98,6 +98,7 @@ export async function generateBookContent(
   htmlContent: string;
   oneSentenceSummary: string;
   category: string;
+  author?: string;
 }> {
   // Step 1: Metadata (Haiku, fast)
   onProgress?.({ step: 1, totalSteps: 3, message: '正在分析书籍结构...' });
@@ -107,9 +108,12 @@ export async function generateBookContent(
     throw new Error('元数据生成失败，请重试');
   }
 
+  // Use AI-detected author if user didn't provide one
+  const resolvedAuthor = author || (metadata.author as string) || '';
+
   // Step 2: Deep content Part 1 (Sonnet, sections 1-5)
   onProgress?.({ step: 2, totalSteps: 3, message: '正在深度解读（上篇：结构与论点）...' });
-  const step2 = await fetchStep({ title, author, step: 2, metadata });
+  const step2 = await fetchStep({ title, author: resolvedAuthor, step: 2, metadata });
   const htmlPart1 = (step2.htmlPart1 as string) || '';
   if (!htmlPart1 || htmlPart1.length < 50) {
     throw new Error('深度解读上篇生成失败，请重试');
@@ -117,14 +121,14 @@ export async function generateBookContent(
 
   // Step 3: Deep content Part 2 (Sonnet, sections 6-10)
   onProgress?.({ step: 3, totalSteps: 3, message: '正在深度解读（下篇：洞见与评价）...' });
-  const step3 = await fetchStep({ title, author, step: 3, metadata });
+  const step3 = await fetchStep({ title, author: resolvedAuthor, step: 3, metadata });
   const htmlPart2 = (step3.htmlPart2 as string) || '';
   if (!htmlPart2 || htmlPart2.length < 50) {
     throw new Error('深度解读下篇生成失败，请重试');
   }
 
   const htmlContent = buildFullHtml(
-    title, author,
+    title, resolvedAuthor,
     metadata.category as string,
     htmlPart1, htmlPart2,
   );
@@ -135,6 +139,7 @@ export async function generateBookContent(
     htmlContent,
     oneSentenceSummary: metadata.oneSentenceSummary as string,
     category: metadata.category as string,
+    author: resolvedAuthor,
   };
 }
 

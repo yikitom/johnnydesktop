@@ -14,6 +14,7 @@ const METADATA_TOOL = {
     type: 'object' as const,
     properties: {
       category: { type: 'string' as const, enum: CATEGORIES },
+      author: { type: 'string' as const, description: 'The author name in Chinese (e.g. 丹尼尔·卡尼曼). If unknown, provide best guess.' },
       oneSentenceSummary: { type: 'string' as const, description: 'One powerful sentence in Chinese (40-80 chars)' },
       authorBackground: { type: 'string' as const, description: 'Author background in Chinese (100-200 chars)' },
       coreThesis: { type: 'string' as const, description: 'Core thesis in Chinese (150-300 chars)' },
@@ -28,7 +29,7 @@ const METADATA_TOOL = {
         description: '5-8 insights',
       },
     },
-    required: ['category', 'oneSentenceSummary', 'authorBackground', 'coreThesis', 'chapterOutline', 'keyInsights'],
+    required: ['category', 'author', 'oneSentenceSummary', 'authorBackground', 'coreThesis', 'chapterOutline', 'keyInsights'],
   },
 };
 
