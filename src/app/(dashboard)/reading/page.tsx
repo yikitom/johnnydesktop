@@ -37,10 +37,11 @@ export default function ReadingPage() {
   }, [loaded, books, addBook]);
 
   const handleOpenBook = useCallback((book: Book) => {
+    // Always use airtableId for the view page (it fetches from Airtable)
     if (book.airtableId) {
       window.open(`/reading/view/${book.airtableId}`, '_blank');
     } else {
-      window.open(`/reading/view/${book.id}`, '_blank');
+      toast.error('书籍尚未保存到数据库，请先点击更新');
     }
   }, []);
 
@@ -87,9 +88,10 @@ export default function ReadingPage() {
 
     addBook(newBook);
     setCreating(true);
-    setModalOpen(false); // Close modal immediately so user sees the loading card
+    setModalOpen(false);
 
     try {
+      // Step 1: Generate AI content
       const result = await generateBookContent(title, author);
       const updatedFields: Partial<Book> = {
         ...result,
@@ -97,13 +99,11 @@ export default function ReadingPage() {
         updatedAt: new Date().toISOString(),
       };
 
-      updateBook(id, updatedFields);
-
-      // Save to Airtable
+      // Step 2: Save to Airtable FIRST (so airtableId is available before user can click)
       const airtableId = await saveBookToAirtable({ ...newBook, ...updatedFields });
-      if (airtableId) {
-        updateBook(id, { airtableId });
-      }
+
+      // Step 3: Update local store with content AND airtableId together
+      updateBook(id, { ...updatedFields, ...(airtableId ? { airtableId } : {}) });
 
       toast.success('书籍解读生成完成！');
     } catch (err) {
@@ -126,14 +126,15 @@ export default function ReadingPage() {
       };
       updateBook(book.id, updatedFields);
 
-      // Update in Airtable if we have an airtableId
+      // Save to Airtable
       if (book.airtableId) {
-        try {
-          await updateBookInAirtable(book.airtableId, updatedFields);
-        } catch (e) {
-          console.error('Airtable update failed:', e);
-          toast.error('内容已生成，但保存到数据库失败');
-          return;
+        // Update existing record
+        await updateBookInAirtable(book.airtableId, updatedFields);
+      } else {
+        // No airtableId yet — create a new record
+        const airtableId = await saveBookToAirtable({ ...book, ...updatedFields });
+        if (airtableId) {
+          updateBook(book.id, { airtableId });
         }
       }
 

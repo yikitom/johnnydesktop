@@ -4,7 +4,7 @@ import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useBookStore } from '@/lib/store';
 import { generateBookContent } from '@/lib/ai';
-import { updateBookInAirtable } from '@/lib/airtable';
+import { updateBookInAirtable, saveBookToAirtable } from '@/lib/airtable';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
 import ShareModal from '@/components/ShareModal';
@@ -14,7 +14,7 @@ export default function BookDetailPage({ params }: { params: Promise<{ id: strin
   const router = useRouter();
   const { books, updateBook } = useBookStore();
   const [shareOpen, setShareOpen] = useState(false);
-  const book = books.find((b) => b.id === id);
+  const book = books.find((b) => b.id === id || b.airtableId === id);
 
   if (!book) {
     return (
@@ -42,13 +42,13 @@ export default function BookDetailPage({ params }: { params: Promise<{ id: strin
       };
       updateBook(book.id, updatedFields);
 
+      // Save to Airtable
       if (book.airtableId) {
-        try {
-          await updateBookInAirtable(book.airtableId, updatedFields);
-        } catch (e) {
-          console.error('Airtable update failed:', e);
-          toast.error('内容已生成，但保存到数据库失败');
-          return;
+        await updateBookInAirtable(book.airtableId, updatedFields);
+      } else {
+        const airtableId = await saveBookToAirtable({ ...book, ...updatedFields });
+        if (airtableId) {
+          updateBook(book.id, { airtableId });
         }
       }
 
