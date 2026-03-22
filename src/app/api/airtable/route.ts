@@ -27,13 +27,13 @@ export async function GET(req: NextRequest) {
     if (id) {
       const book = inMemoryBooks[id];
       if (!book) return NextResponse.json({ book: null });
-      return NextResponse.json({ book: { id, airtableId: id, ...book, isDeleted: false, status: book.status || 'ready' } });
+      return NextResponse.json({ book: { id, airtableId: id, ...book, isDeleted: !!book.isDeleted, status: book.status || 'ready' } });
     }
     const books = Object.entries(inMemoryBooks).map(([recId, book]) => ({
       id: recId,
       airtableId: recId,
       ...book,
-      isDeleted: false,
+      isDeleted: !!book.isDeleted,
       status: book.status || 'ready',
     }));
     return NextResponse.json({ books });
@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
           status: fields.status || 'ready',
           createdAt: fields.createdAt || '',
           updatedAt: fields.updatedAt || '',
-          isDeleted: false,
+          isDeleted: !!fields.isDeleted,
         },
       });
     }
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
       status: rec.fields.status || 'ready',
       createdAt: rec.fields.createdAt || '',
       updatedAt: rec.fields.updatedAt || '',
-      isDeleted: false,
+      isDeleted: !!rec.fields.isDeleted,
     }));
     return NextResponse.json({ books });
   } catch (e) {
@@ -156,7 +156,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     // Only send fields that exist in the Airtable table schema
-    const allowedFields = ['title', 'author', 'category', 'oneSentenceSummary', 'htmlContent', 'status', 'createdAt', 'updatedAt'];
+    const allowedFields = ['title', 'author', 'category', 'oneSentenceSummary', 'htmlContent', 'status', 'isDeleted', 'createdAt', 'updatedAt'];
     const fields: Record<string, unknown> = {};
     for (const key of allowedFields) {
       if (key in body.book && body.book[key] !== undefined) {

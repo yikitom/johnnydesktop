@@ -158,6 +158,28 @@ export default function ReadingPage() {
     }
   };
 
+  const handleDelete = async (book: Book) => {
+    deleteBook(book.id);
+    if (book.airtableId) {
+      try {
+        await updateBookInAirtable(book.airtableId, { isDeleted: true });
+      } catch (e) {
+        console.error('Failed to sync delete to Airtable:', e);
+      }
+    }
+  };
+
+  const handleRestore = async (book: Book) => {
+    restoreBook(book.id);
+    if (book.airtableId) {
+      try {
+        await updateBookInAirtable(book.airtableId, { isDeleted: false });
+      } catch (e) {
+        console.error('Failed to sync restore to Airtable:', e);
+      }
+    }
+  };
+
   const recycleBinCount = books.filter((b) => b.isDeleted).length;
 
   return (
@@ -324,7 +346,7 @@ export default function ReadingPage() {
                   {showRecycleBin ? (
                     <>
                       <button
-                        onClick={() => restoreBook(book.id)}
+                        onClick={() => handleRestore(book)}
                         className="px-2.5 py-1 text-xs text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                       >
                         恢复
@@ -359,7 +381,7 @@ export default function ReadingPage() {
                         </>
                       )}
                       <button
-                        onClick={() => deleteBook(book.id)}
+                        onClick={() => handleDelete(book)}
                         className="px-2.5 py-1 text-xs text-red-400 hover:bg-red-50 rounded-lg transition-colors"
                         title="移入回收站"
                       >
