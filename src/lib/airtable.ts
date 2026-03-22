@@ -18,6 +18,7 @@ export async function saveBookToAirtable(book: Book): Promise<string | null> {
           status: book.status,
           createdAt: book.createdAt,
           updatedAt: book.updatedAt,
+          ...(book.coverUrl ? { coverUrl: book.coverUrl } : {}),
         },
       }),
     });

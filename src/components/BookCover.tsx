@@ -67,6 +67,8 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const onCoverLoadedRef = useRef(onCoverLoaded);
   onCoverLoadedRef.current = onCoverLoaded;
+  // Track whether the current URL was freshly fetched (needs persisting after verification)
+  const pendingSaveUrlRef = useRef<string | null>(null);
 
   const style = CATEGORY_STYLES[category] || DEFAULT_STYLE;
 
@@ -80,6 +82,11 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setImgReady(true);
     setFetching(false);
+    // Image loaded successfully — if this was a freshly fetched URL, persist it now
+    if (pendingSaveUrlRef.current) {
+      onCoverLoadedRef.current?.(pendingSaveUrlRef.current);
+      pendingSaveUrlRef.current = null;
+    }
   }, []);
 
   const handleImgError = useCallback(() => {
@@ -124,7 +131,8 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
           setImgError(false);
           setImgReady(false);
           setFetching(false);
-          onCoverLoadedRef.current?.(data.coverUrl);
+          // Don't call onCoverLoaded yet — wait for img onLoad to verify
+          pendingSaveUrlRef.current = data.coverUrl;
 
           timeoutRef.current = setTimeout(() => {
             if (!cancelled) {

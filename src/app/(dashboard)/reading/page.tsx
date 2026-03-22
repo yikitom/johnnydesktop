@@ -289,7 +289,12 @@ export default function ReadingPage() {
                   author={book.author}
                   category={book.category}
                   coverUrl={book.coverUrl}
-                  onCoverLoaded={(url) => updateBook(book.id, { coverUrl: url })}
+                  onCoverLoaded={(url) => {
+                    updateBook(book.id, { coverUrl: url });
+                    if (book.airtableId) {
+                      updateBookInAirtable(book.airtableId, { coverUrl: url }).catch(() => {});
+                    }
+                  }}
                 />
 
                 {/* Info */}

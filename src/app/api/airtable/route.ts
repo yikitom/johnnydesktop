@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
           content: fields.content || '',
           oneSentenceSummary: fields.oneSentenceSummary || '',
           htmlContent: fields.htmlContent || '',
+          coverUrl: fields.coverUrl || '',
           status: fields.status || 'ready',
           createdAt: fields.createdAt || '',
           updatedAt: fields.updatedAt || '',
@@ -79,6 +80,7 @@ export async function GET(req: NextRequest) {
       content: rec.fields.content || '',
       oneSentenceSummary: rec.fields.oneSentenceSummary || '',
       htmlContent: rec.fields.htmlContent || '',
+      coverUrl: rec.fields.coverUrl || '',
       status: rec.fields.status || 'ready',
       createdAt: rec.fields.createdAt || '',
       updatedAt: rec.fields.updatedAt || '',
@@ -113,6 +115,9 @@ export async function POST(req: NextRequest) {
       htmlContent: body.book.htmlContent || '',
       status: body.book.status || 'ready',
     };
+    if (body.book.coverUrl) {
+      fields.coverUrl = body.book.coverUrl;
+    }
 
     if (body.book.createdAt) {
       fields.createdAt = body.book.createdAt;
@@ -156,7 +161,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     // Only send fields that exist in the Airtable table schema
-    const allowedFields = ['title', 'author', 'category', 'oneSentenceSummary', 'htmlContent', 'status', 'isDeleted', 'createdAt', 'updatedAt'];
+    const allowedFields = ['title', 'author', 'category', 'oneSentenceSummary', 'htmlContent', 'status', 'isDeleted', 'createdAt', 'updatedAt', 'coverUrl'];
     const fields: Record<string, unknown> = {};
     for (const key of allowedFields) {
       if (key in body.book && body.book[key] !== undefined) {
