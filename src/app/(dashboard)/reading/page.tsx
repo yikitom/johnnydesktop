@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useBookStore, type Book } from '@/lib/store';
-import { generateBookContent } from '@/lib/ai';
+import { generateBookContent, type GenerationProgress } from '@/lib/ai';
 import { saveBookToAirtable, fetchBooksFromAirtable, updateBookInAirtable } from '@/lib/airtable';
 import CreateBookModal from '@/components/CreateBookModal';
 import ShareModal from '@/components/ShareModal';
@@ -19,6 +19,8 @@ export default function ReadingPage() {
   const [creating, setCreating] = useState(false);
   const [shareBook, setShareBook] = useState<Book | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // Track generation progress: { [bookId]: progressMessage }
+  const [progressMap, setProgressMap] = useState<Record<string, string>>({});
 
   // Load books from Airtable on mount
   useEffect(() => {
@@ -37,7 +39,6 @@ export default function ReadingPage() {
   }, [loaded, books, addBook]);
 
   const handleOpenBook = useCallback((book: Book) => {
-    // Always use airtableId for the view page (it fetches from Airtable)
     if (book.airtableId) {
       window.open(`/reading/view/${book.airtableId}`, '_blank');
     } else {
@@ -68,6 +69,10 @@ export default function ReadingPage() {
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [books, searchQuery, categoryFilter, showRecycleBin]);
 
+  const onProgress = useCallback((bookId: string, progress: GenerationProgress) => {
+    setProgressMap((prev) => ({ ...prev, [bookId]: progress.message }));
+  }, []);
+
   const handleCreateBook = async (title: string, author: string) => {
     const id = `book_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const now = new Date().toISOString();
@@ -91,34 +96,38 @@ export default function ReadingPage() {
     setModalOpen(false);
 
     try {
-      // Step 1: Generate AI content
-      const result = await generateBookContent(title, author);
+      const result = await generateBookContent(title, author, (p) => onProgress(id, p));
       const updatedFields: Partial<Book> = {
         ...result,
         status: 'ready' as const,
         updatedAt: new Date().toISOString(),
       };
 
-      // Step 2: Save to Airtable FIRST (so airtableId is available before user can click)
+      // Save to Airtable FIRST
       const airtableId = await saveBookToAirtable({ ...newBook, ...updatedFields });
 
-      // Step 3: Update local store with content AND airtableId together
+      // Update local store with content AND airtableId together
       updateBook(id, { ...updatedFields, ...(airtableId ? { airtableId } : {}) });
 
-      toast.success('书籍解读生成完成！');
+      toast.success('深度解读生成完成！');
     } catch (err) {
       updateBook(id, { status: 'error' });
       const msg = err instanceof Error ? err.message : '生成失败';
       toast.error(msg);
     } finally {
       setCreating(false);
+      setProgressMap((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     }
   };
 
   const handleRegenerate = async (book: Book) => {
     updateBook(book.id, { status: 'generating' });
     try {
-      const result = await generateBookContent(book.title, book.author);
+      const result = await generateBookContent(book.title, book.author, (p) => onProgress(book.id, p));
       const updatedFields: Partial<Book> = {
         ...result,
         status: 'ready' as const,
@@ -126,23 +135,26 @@ export default function ReadingPage() {
       };
       updateBook(book.id, updatedFields);
 
-      // Save to Airtable
       if (book.airtableId) {
-        // Update existing record
         await updateBookInAirtable(book.airtableId, updatedFields);
       } else {
-        // No airtableId yet — create a new record
         const airtableId = await saveBookToAirtable({ ...book, ...updatedFields });
         if (airtableId) {
           updateBook(book.id, { airtableId });
         }
       }
 
-      toast.success('重新生成完成！');
+      toast.success('深度解读重新生成完成！');
     } catch (err) {
       updateBook(book.id, { status: 'error' });
       const msg = err instanceof Error ? err.message : '重新生成失败';
       toast.error(msg);
+    } finally {
+      setProgressMap((prev) => {
+        const next = { ...prev };
+        delete next[book.id];
+        return next;
+      });
     }
   };
 
@@ -273,12 +285,26 @@ export default function ReadingPage() {
               {/* Card Body */}
               <div className="px-5 py-4">
                 {book.status === 'generating' ? (
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    AI 正在生成解读内容...
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-indigo-500">
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      <span>{progressMap[book.id] || 'AI 正在生成深度解读...'}</span>
+                    </div>
+                    {progressMap[book.id] && (
+                      <div className="w-full bg-gray-100 rounded-full h-1.5">
+                        <div
+                          className="bg-gradient-to-r from-indigo-500 to-purple-500 h-1.5 rounded-full transition-all duration-500"
+                          style={{
+                            width: progressMap[book.id]?.includes('上篇') ? '50%'
+                              : progressMap[book.id]?.includes('下篇') ? '80%'
+                              : '20%',
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 ) : book.status === 'error' ? (
                   <p className="text-sm text-red-500">生成失败</p>
