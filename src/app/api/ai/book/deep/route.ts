@@ -190,7 +190,7 @@ export async function POST(req: Request) {
       method: 'POST',
       headers: apiHeaders(apiKey),
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 16000,
         stream: true,
         container: {
