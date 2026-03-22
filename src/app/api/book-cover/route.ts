@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Known English titles for better search on non-Chinese sources
-const KNOWN_TRANSLATIONS: Record<string, string> = {
-  '思考快与慢': 'Thinking Fast and Slow',
-  '思考，快与慢': 'Thinking Fast and Slow',
-  '乡土中国': 'From the Soil',
-  '人类简史': 'Sapiens',
-  '未来简史': 'Homo Deus',
-  '三体': 'The Three-Body Problem',
-  '活着': 'To Live',
-  '百年孤独': 'One Hundred Years of Solitude',
-  '小王子': 'The Little Prince',
-  '追风筝的人': 'The Kite Runner',
-  '1984': '1984',
-  '围城': 'Fortress Besieged',
-  '红楼梦': 'Dream of the Red Chamber',
-  '西游记': 'Journey to the West',
-  '脑机接口': 'Brain-Computer Interface',
-  '原则': 'Principles',
+// Known English translations for better search on non-Chinese sources
+const KNOWN_TRANSLATIONS: Record<string, { title: string; author?: string }> = {
+  '思考快与慢': { title: 'Thinking Fast and Slow', author: 'Daniel Kahneman' },
+  '思考，快与慢': { title: 'Thinking Fast and Slow', author: 'Daniel Kahneman' },
+  '乡土中国': { title: 'From the Soil', author: 'Fei Xiaotong' },
+  '人类简史': { title: 'Sapiens', author: 'Yuval Noah Harari' },
+  '未来简史': { title: 'Homo Deus', author: 'Yuval Noah Harari' },
+  '三体': { title: 'The Three-Body Problem', author: 'Liu Cixin' },
+  '活着': { title: 'To Live', author: 'Yu Hua' },
+  '百年孤独': { title: 'One Hundred Years of Solitude', author: 'Gabriel Garcia Marquez' },
+  '小王子': { title: 'The Little Prince', author: 'Antoine de Saint-Exupery' },
+  '追风筝的人': { title: 'The Kite Runner', author: 'Khaled Hosseini' },
+  '1984': { title: '1984', author: 'George Orwell' },
+  '围城': { title: 'Fortress Besieged', author: 'Qian Zhongshu' },
+  '红楼梦': { title: 'Dream of the Red Chamber', author: 'Cao Xueqin' },
+  '西游记': { title: 'Journey to the West', author: 'Wu Cheng en' },
+  '脑机接口': { title: 'Brain-Computer Interface' },
+  '原则': { title: 'Principles', author: 'Ray Dalio' },
+  '理性思辨': { title: 'Critical Thinking' },
+  '原子弹的制造': { title: 'The Making of the Atomic Bomb', author: 'Richard Rhodes' },
 };
 
 function normalize(s: string): string {
@@ -38,7 +40,7 @@ function titleMatches(resultTitle: string, requestedTitle: string, englishTitle?
   return false;
 }
 
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 6000): Promise<Response> {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -48,49 +50,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
-// ---- Source 1: Douban (best for Chinese books) ----
-// Uses the internal JSON search endpoint that returns cover_url directly
-async function searchDouban(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
-  try {
-    const url = `https://book.douban.com/j/search?q=${encodeURIComponent(query)}`;
-    const res = await fetchWithTimeout(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://book.douban.com/',
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-      },
-    });
-    if (!res.ok) return null;
-    const text = await res.text();
-    // Response could be JSON array or object with items/data
-    const items: Array<{ title?: string; cover_url?: string }> = [];
-    try {
-      const json = JSON.parse(text);
-      if (Array.isArray(json)) {
-        items.push(...json);
-      } else if (json.items) {
-        items.push(...json.items);
-      } else if (json.data) {
-        items.push(...json.data);
-      }
-    } catch {
-      return null;
-    }
-
-    for (const item of items.slice(0, 5)) {
-      // Strip HTML tags from title if present
-      const itemTitle = (item.title || '').replace(/<[^>]*>/g, '').trim();
-      if (!itemTitle || !titleMatches(itemTitle, requestedTitle, englishTitle)) continue;
-      if (item.cover_url) {
-        // Return large version of cover
-        return item.cover_url.replace(/\/s\w+\//, '/l/');
-      }
-    }
-  } catch { /* skip */ }
-  return null;
-}
-
-// ---- Source 2: Bookcover API (Goodreads aggregator) ----
+// ---- Source 1: Bookcover API (Goodreads aggregator) ----
 // https://github.com/w3slley/bookcover-api
 async function searchBookcoverAPI(title: string, author: string): Promise<string | null> {
   try {
@@ -105,7 +65,7 @@ async function searchBookcoverAPI(title: string, author: string): Promise<string
   return null;
 }
 
-// ---- Source 3: Google Books API ----
+// ---- Source 2: Google Books API ----
 async function searchGoogleBooks(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
   try {
     const res = await fetchWithTimeout(
@@ -127,7 +87,7 @@ async function searchGoogleBooks(query: string, requestedTitle: string, englishT
   return null;
 }
 
-// ---- Source 4: Open Library ----
+// ---- Source 3: Open Library ----
 async function searchOpenLibrary(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
   try {
     const res = await fetchWithTimeout(
@@ -177,19 +137,20 @@ export async function GET(req: NextRequest) {
   if (!title) return NextResponse.json({ coverUrl: null });
 
   const cleanTitle = title.replace(/[《》""「」]/g, '');
-  const englishTitle = KNOWN_TRANSLATIONS[cleanTitle];
+  const translation = KNOWN_TRANSLATIONS[cleanTitle];
+  const englishTitle = translation?.title;
+  const englishAuthor = translation?.author;
 
   // All searches fire in parallel — first valid result wins
   const searches: Promise<string | null>[] = [];
 
-  // Douban: best for Chinese books (try Chinese title, and with author)
-  searches.push(searchDouban(cleanTitle, cleanTitle, englishTitle));
-  if (author) searches.push(searchDouban(`${cleanTitle} ${author}`, cleanTitle, englishTitle));
-
-  // Bookcover API (Goodreads): try English title if available, then original
-  if (englishTitle) {
+  // Bookcover API (Goodreads): try with English title+author first for best results
+  if (englishTitle && englishAuthor) {
+    searches.push(searchBookcoverAPI(englishTitle, englishAuthor));
+  } else if (englishTitle) {
     searches.push(searchBookcoverAPI(englishTitle, author));
   }
+  // Also try with original title (works for English books)
   searches.push(searchBookcoverAPI(cleanTitle, author));
 
   // Google Books: try English, title+author, title alone
@@ -197,7 +158,8 @@ export async function GET(req: NextRequest) {
   if (author) searches.push(searchGoogleBooks(`${cleanTitle} ${author}`, cleanTitle, englishTitle));
   searches.push(searchGoogleBooks(cleanTitle, cleanTitle, englishTitle));
 
-  // Open Library: try English, title+author, title alone
+  // Open Library: try English title (Chinese short titles get rejected by API),
+  // then title+author, then title alone
   if (englishTitle) searches.push(searchOpenLibrary(englishTitle, cleanTitle, englishTitle));
   if (author) searches.push(searchOpenLibrary(`${cleanTitle} ${author}`, cleanTitle, englishTitle));
   searches.push(searchOpenLibrary(cleanTitle, cleanTitle, englishTitle));
