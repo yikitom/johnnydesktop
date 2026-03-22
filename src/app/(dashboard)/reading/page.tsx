@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useBookStore, type Book } from '@/lib/store';
 import { generateBookContent } from '@/lib/ai';
-import { saveBookToAirtable, fetchBooksFromAirtable } from '@/lib/airtable';
+import { saveBookToAirtable, fetchBooksFromAirtable, updateBookInAirtable } from '@/lib/airtable';
 import CreateBookModal from '@/components/CreateBookModal';
 import ShareModal from '@/components/ShareModal';
 import toast from 'react-hot-toast';
@@ -87,6 +87,7 @@ export default function ReadingPage() {
 
     addBook(newBook);
     setCreating(true);
+    setModalOpen(false); // Close modal immediately so user sees the loading card
 
     try {
       const result = await generateBookContent(title, author);
@@ -110,7 +111,6 @@ export default function ReadingPage() {
       toast.error('生成失败，请重试');
     } finally {
       setCreating(false);
-      setModalOpen(false);
     }
   };
 
@@ -118,11 +118,18 @@ export default function ReadingPage() {
     updateBook(book.id, { status: 'generating' });
     try {
       const result = await generateBookContent(book.title, book.author);
-      updateBook(book.id, {
+      const updatedFields: Partial<Book> = {
         ...result,
-        status: 'ready',
+        status: 'ready' as const,
         updatedAt: new Date().toISOString(),
-      });
+      };
+      updateBook(book.id, updatedFields);
+
+      // Update in Airtable if we have an airtableId
+      if (book.airtableId) {
+        await updateBookInAirtable(book.airtableId, updatedFields);
+      }
+
       toast.success('重新生成完成！');
     } catch {
       updateBook(book.id, { status: 'error' });

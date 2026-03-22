@@ -4,6 +4,7 @@ import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useBookStore } from '@/lib/store';
 import { generateBookContent } from '@/lib/ai';
+import { updateBookInAirtable } from '@/lib/airtable';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
 import ShareModal from '@/components/ShareModal';
@@ -34,11 +35,17 @@ export default function BookDetailPage({ params }: { params: Promise<{ id: strin
     updateBook(book.id, { status: 'generating' });
     try {
       const result = await generateBookContent(book.title, book.author);
-      updateBook(book.id, {
+      const updatedFields = {
         ...result,
-        status: 'ready',
+        status: 'ready' as const,
         updatedAt: new Date().toISOString(),
-      });
+      };
+      updateBook(book.id, updatedFields);
+
+      if (book.airtableId) {
+        await updateBookInAirtable(book.airtableId, updatedFields);
+      }
+
       toast.success('内容已更新！');
     } catch {
       updateBook(book.id, { status: 'error' });
