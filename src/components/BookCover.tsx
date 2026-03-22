@@ -62,7 +62,7 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
   // Show real cover image
   if (imgUrl && !imgError) {
     return (
-      <div className="w-[72px] h-[100px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gray-100">
+      <div className="w-[100px] h-[140px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gray-100">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imgUrl}
@@ -76,13 +76,13 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
 
   // Default cover with category gradient
   return (
-    <div className={`w-[72px] h-[100px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-center p-2`}>
+    <div className={`w-[100px] h-[140px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-center p-2`}>
       {loading ? (
         <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
       ) : (
         <>
-          <span className="text-2xl mb-1">{style.emoji}</span>
-          <span className="text-[9px] text-white/90 font-medium text-center leading-tight line-clamp-2">
+          <span className="text-3xl mb-1.5">{style.emoji}</span>
+          <span className="text-[11px] text-white/90 font-medium text-center leading-tight line-clamp-2">
             {title.replace(/[《》]/g, '')}
           </span>
         </>
