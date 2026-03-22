@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 // Category → gradient mapping for default covers
 const CATEGORY_STYLES: Record<string, { gradient: string }> = {
@@ -17,6 +17,9 @@ const CATEGORY_STYLES: Record<string, { gradient: string }> = {
 };
 
 const DEFAULT_STYLE = { gradient: 'from-indigo-400 to-purple-600' };
+
+// Loading timeout in milliseconds
+const LOADING_TIMEOUT_MS = 10_000;
 
 interface BookCoverProps {
   title: string;
@@ -60,50 +63,123 @@ function FallbackCover({ title, author, category, gradient, loading }: {
 export default function BookCover({ title, author, category, coverUrl, onCoverLoaded }: BookCoverProps) {
   const [imgUrl, setImgUrl] = useState(coverUrl || '');
   const [imgError, setImgError] = useState(false);
+  const [imgReady, setImgReady] = useState(false);
   const [loading, setLoading] = useState(!coverUrl);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const style = CATEGORY_STYLES[category] || DEFAULT_STYLE;
+
+  // Clear timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  // Handle image load success
+  const handleImgLoad = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setImgReady(true);
+    setLoading(false);
+  }, []);
+
+  // Handle image load error
+  const handleImgError = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setImgError(true);
+    setImgReady(false);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     if (coverUrl) {
       setImgUrl(coverUrl);
-      setLoading(false);
+      setImgError(false);
+      setImgReady(false);
+      setLoading(true);
+
+      // Start image load timeout - if the image doesn't load in 10s, give up
+      timeoutRef.current = setTimeout(() => {
+        setImgError(true);
+        setImgReady(false);
+        setLoading(false);
+      }, LOADING_TIMEOUT_MS);
       return;
     }
 
     // Fetch cover from API
     let cancelled = false;
+
+    // API fetch timeout
+    const apiTimeout = setTimeout(() => {
+      if (!cancelled) {
+        cancelled = true;
+        setLoading(false);
+      }
+    }, LOADING_TIMEOUT_MS);
+
     fetch(`/api/book-cover?title=${encodeURIComponent(title)}&author=${encodeURIComponent(author)}`)
       .then((r) => r.json())
       .then((data) => {
+        clearTimeout(apiTimeout);
         if (cancelled) return;
         if (data.coverUrl) {
           setImgUrl(data.coverUrl);
+          setImgError(false);
+          setImgReady(false);
           onCoverLoaded?.(data.coverUrl);
+
+          // Start image load timeout
+          timeoutRef.current = setTimeout(() => {
+            if (!cancelled) {
+              setImgError(true);
+              setImgReady(false);
+              setLoading(false);
+            }
+          }, LOADING_TIMEOUT_MS);
+        } else {
+          // API returned no cover → show fallback immediately
+          setLoading(false);
         }
-        setLoading(false);
       })
       .catch(() => {
+        clearTimeout(apiTimeout);
         if (!cancelled) setLoading(false);
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      clearTimeout(apiTimeout);
+    };
   }, [title, author, coverUrl, onCoverLoaded]);
 
-  const style = CATEGORY_STYLES[category] || DEFAULT_STYLE;
-
-  // No image URL or image failed to load → show fallback
-  if (!imgUrl || imgError) {
-    return <FallbackCover title={title} author={author} category={category} gradient={style.gradient} loading={loading} />;
+  // While loading (API fetch or image render) → show gradient + spinner
+  // Never show white background
+  if (loading && (!imgUrl || !imgReady)) {
+    return <FallbackCover title={title} author={author} category={category} gradient={style.gradient} loading />;
   }
 
-  // Show real cover image, onError triggers fallback
+  // No image URL or image failed to load → show gradient fallback with title
+  if (!imgUrl || imgError) {
+    return <FallbackCover title={title} author={author} category={category} gradient={style.gradient} />;
+  }
+
+  // Image URL exists — render img with gradient background underneath to prevent white flash
   return (
-    <div className="w-[130px] h-[180px] flex-shrink-0 rounded-lg overflow-hidden shadow-md">
+    <div className={`w-[130px] h-[180px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gradient-to-br ${style.gradient} relative`}>
+      {/* Show spinner overlay while image is loading */}
+      {!imgReady && (
+        <div className="absolute inset-0 flex items-center justify-center z-10">
+          <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+        </div>
+      )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={imgUrl}
         alt={title}
-        className="w-full h-full object-cover"
-        onError={() => setImgError(true)}
+        className={`w-full h-full object-cover transition-opacity duration-300 ${imgReady ? 'opacity-100' : 'opacity-0'}`}
+        onLoad={handleImgLoad}
+        onError={handleImgError}
       />
     </div>
   );
