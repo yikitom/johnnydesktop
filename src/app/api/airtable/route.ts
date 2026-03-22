@@ -109,7 +109,6 @@ export async function POST(req: NextRequest) {
       title: body.book.title,
       author: body.book.author || '',
       category: body.book.category || '',
-      summary: body.book.summary || '',
       oneSentenceSummary: body.book.oneSentenceSummary || '',
       htmlContent: body.book.htmlContent || '',
       status: body.book.status || 'ready',
@@ -157,7 +156,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     // Only send fields that exist in the Airtable table schema
-    const allowedFields = ['title', 'author', 'category', 'summary', 'oneSentenceSummary', 'htmlContent', 'status', 'createdAt', 'updatedAt'];
+    const allowedFields = ['title', 'author', 'category', 'oneSentenceSummary', 'htmlContent', 'status', 'createdAt', 'updatedAt'];
     const fields: Record<string, unknown> = {};
     for (const key of allowedFields) {
       if (key in body.book && body.book[key] !== undefined) {
