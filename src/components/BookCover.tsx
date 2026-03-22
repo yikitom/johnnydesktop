@@ -1,6 +1,32 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+
+// Check if an image is mostly a single color (blank/white/solid)
+function isBlankImage(img: HTMLImageElement): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    const size = 20; // sample at small size for performance
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    ctx.drawImage(img, 0, 0, size, size);
+    const data = ctx.getImageData(0, 0, size, size).data;
+    // Check if >95% of pixels are similar to the first pixel
+    const [r0, g0, b0] = [data[0], data[1], data[2]];
+    let sameCount = 0;
+    const total = size * size;
+    for (let i = 0; i < data.length; i += 4) {
+      if (Math.abs(data[i] - r0) < 15 && Math.abs(data[i + 1] - g0) < 15 && Math.abs(data[i + 2] - b0) < 15) {
+        sameCount++;
+      }
+    }
+    return sameCount / total > 0.95;
+  } catch {
+    return false;
+  }
+}
 
 // Category → gradient + emoji mapping for default covers
 const CATEGORY_STYLES: Record<string, { gradient: string; emoji: string }> = {
@@ -91,7 +117,12 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
           src={imgUrl}
           alt={title}
           className="w-full h-full object-cover relative z-10"
+          crossOrigin="anonymous"
           onError={() => setImgError(true)}
+          onLoad={(e) => {
+            const img = e.currentTarget;
+            if (isBlankImage(img)) setImgError(true);
+          }}
         />
       </div>
     );
