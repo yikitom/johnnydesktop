@@ -59,23 +59,43 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
 
   const style = CATEGORY_STYLES[category] || DEFAULT_STYLE;
 
-  // Show real cover image
-  if (imgUrl && !imgError) {
+  const cleanTitle = title.replace(/[《》]/g, '');
+  const showImg = imgUrl && !imgError;
+
+  // Fallback layer (always rendered as background behind img)
+  const fallbackLayer = (
+    <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-between p-3`}>
+      <div className="w-full border-b border-white/20 pb-1 mb-1">
+        <span className="text-[10px] text-white/60 font-light tracking-wider uppercase">{category || 'BOOK'}</span>
+      </div>
+      <div className="flex-1 flex items-center justify-center">
+        <span className="text-sm text-white font-bold text-center leading-snug line-clamp-4">
+          {cleanTitle}
+        </span>
+      </div>
+      <div className="w-full border-t border-white/20 pt-1">
+        <span className="text-[10px] text-white/70 font-medium text-center block truncate">
+          {author}
+        </span>
+      </div>
+    </div>
+  );
+
+  // Image with fallback underneath
+  if (showImg) {
     return (
-      <div className="w-[130px] h-[180px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gray-100">
+      <div className="w-[130px] h-[180px] flex-shrink-0 rounded-lg overflow-hidden shadow-md relative">
+        {fallbackLayer}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imgUrl}
           alt={title}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover relative z-10"
           onError={() => setImgError(true)}
         />
       </div>
     );
   }
-
-  // Default cover with category gradient + book title
-  const cleanTitle = title.replace(/[《》]/g, '');
   return (
     <div className={`w-[130px] h-[180px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-between p-3`}>
       {loading ? (
