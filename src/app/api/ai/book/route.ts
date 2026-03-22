@@ -15,7 +15,7 @@ const METADATA_TOOL = {
     properties: {
       category: { type: 'string' as const, enum: CATEGORIES },
       author: { type: 'string' as const, description: 'The author name in Chinese (e.g. 丹尼尔·卡尼曼). If unknown, provide best guess.' },
-      oneSentenceSummary: { type: 'string' as const, description: 'One powerful sentence in Chinese (40-80 chars)' },
+      oneSentenceSummary: { type: 'string' as const, description: 'A sharp, provocative one-sentence hook in Chinese (40-80 chars). Should be bold and opinionated — like a book review headline that makes people want to read more. Avoid generic descriptions.' },
       authorBackground: { type: 'string' as const, description: 'Author background in Chinese (100-200 chars)' },
       coreThesis: { type: 'string' as const, description: 'Core thesis in Chinese (150-300 chars)' },
       chapterOutline: {

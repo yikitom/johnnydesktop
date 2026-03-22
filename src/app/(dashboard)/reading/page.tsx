@@ -343,7 +343,7 @@ export default function ReadingPage() {
                     ) : book.status === 'error' ? (
                       <p className="text-xs text-red-500">生成失败</p>
                     ) : (
-                      <p className="text-xs text-gray-500 line-clamp-3 leading-relaxed">
+                      <p className="text-sm text-gray-600 line-clamp-4 leading-relaxed">
                         {book.oneSentenceSummary}
                       </p>
                     )}
