@@ -130,21 +130,11 @@ Use an indigo/purple gradient theme with modern card-based layout and responsive
 - Footer: "由 AI 深度解读生成 · JohnnyDesktop"
 `;
 
-  // Create FormData with SKILL.md file
-  // For Edge Runtime, we need to build the multipart form manually
-  const boundary = '----SkillUploadBoundary' + Date.now();
-  const body = [
-    `--${boundary}`,
-    `Content-Disposition: form-data; name="display_title"`,
-    '',
-    SKILL_NAME,
-    `--${boundary}`,
-    `Content-Disposition: form-data; name="files"; filename="${SKILL_NAME}/SKILL.md"`,
-    'Content-Type: text/markdown',
-    '',
-    skillMd,
-    `--${boundary}--`,
-  ].join('\r\n');
+  // Create FormData with SKILL.md file using Web API FormData (supported in Edge Runtime)
+  const formData = new FormData();
+  formData.append('display_title', SKILL_NAME);
+  const skillFile = new File([skillMd], `${SKILL_NAME}/SKILL.md`, { type: 'text/markdown' });
+  formData.append('files[]', skillFile);
 
   const createRes = await fetch(`${ANTHROPIC_API}/v1/skills?beta=true`, {
     method: 'POST',
@@ -152,9 +142,9 @@ Use an indigo/purple gradient theme with modern card-based layout and responsive
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'anthropic-beta': BETA_HEADERS,
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      // Don't set Content-Type - FormData sets it with boundary automatically
     },
-    body,
+    body: formData,
   });
 
   if (!createRes.ok) {
