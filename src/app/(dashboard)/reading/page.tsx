@@ -298,9 +298,9 @@ export default function ReadingPage() {
                         <div
                           className="bg-gradient-to-r from-indigo-500 to-purple-500 h-1.5 rounded-full transition-all duration-500"
                           style={{
-                            width: progressMap[book.id]?.includes('深度解读') ? '60%'
-                              : progressMap[book.id]?.includes('已生成') ? '80%'
-                              : '20%',
+                            width: progressMap[book.id]?.includes('上篇') ? '45%'
+                              : progressMap[book.id]?.includes('下篇') ? '75%'
+                              : '15%',
                           }}
                         />
                       </div>

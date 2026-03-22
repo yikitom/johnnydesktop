@@ -1,8 +1,9 @@
-// AI service - multi-step book generation
-// Step 1: Metadata (Haiku, fast, non-streaming)
-// Step 2: Deep content via Anthropic Skills API (Sonnet + deep-book-deconstruction skill, streaming)
+// AI service - deep-book-deconstruction methodology
+// Step 1: Metadata (Haiku, fast)
+// Step 2: Deep HTML Part 1 (Sonnet, streaming) - Sections 1-5
+// Step 3: Deep HTML Part 2 (Sonnet, streaming) - Sections 6-10
 
-const STEP_TIMEOUT_MS = 55 * 1000; // 55 second timeout for step 1
+const STEP_TIMEOUT_MS = 55 * 1000; // 55s for metadata step
 
 export type GenerationProgress = {
   step: number;
@@ -10,7 +11,7 @@ export type GenerationProgress = {
   message: string;
 };
 
-// Step 1: Quick metadata fetch (non-streaming)
+// Step 1: Quick metadata (non-streaming)
 async function fetchMetadata(title: string, author: string) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), STEP_TIMEOUT_MS);
@@ -45,22 +46,22 @@ async function fetchMetadata(title: string, author: string) {
   }
 }
 
-// Step 2: Deep content via Skills API (streaming, no timeout - edge function)
-async function fetchDeepContent(
+// Stream deep content from Edge Function
+async function streamDeepContent(
   title: string,
   author: string,
   metadata: Record<string, unknown>,
-  onChunk?: (text: string) => void,
+  part: number,
 ): Promise<string> {
   const res = await fetch('/api/ai/book/deep', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, author, metadata }),
+    body: JSON.stringify({ title, author, metadata, part }),
   });
 
   if (!res.ok) {
     const errorBody = await res.text().catch(() => '');
-    let errorMsg = '深度解读生成失败';
+    let errorMsg = `深度解读第${part}部分生成失败`;
     try {
       const errJson = JSON.parse(errorBody);
       if (errJson.error) errorMsg = errJson.error;
@@ -68,7 +69,6 @@ async function fetchDeepContent(
     throw new Error(errorMsg);
   }
 
-  // Parse SSE stream and accumulate text content
   const reader = res.body?.getReader();
   if (!reader) throw new Error('无法读取流式响应');
 
@@ -81,10 +81,8 @@ async function fetchDeepContent(
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-
-    // Parse SSE events from buffer
     const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+    buffer = lines.pop() || '';
 
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
@@ -93,29 +91,13 @@ async function fetchDeepContent(
 
       try {
         const event = JSON.parse(data);
-
-        // Handle text content deltas (Claude's text output)
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-          const text = event.delta.text || '';
-          accumulated += text;
-          onChunk?.(text);
+          accumulated += event.delta.text || '';
         }
-
-        // Handle code execution result (skill may output via code execution)
-        if (event.type === 'content_block_start' && event.content_block?.type === 'code_execution_result') {
-          const output = event.content_block.output || '';
-          if (output.includes('<html') || output.includes('<!DOCTYPE')) {
-            accumulated += output;
-            onChunk?.(output);
-          }
-        }
-
-        // Handle errors
         if (event.type === 'error') {
           throw new Error(event.error?.message || '流式响应错误');
         }
       } catch (e) {
-        // Skip unparseable lines (SSE comments, empty events, etc.)
         if (e instanceof SyntaxError) continue;
         throw e;
       }
@@ -125,18 +107,39 @@ async function fetchDeepContent(
   return accumulated;
 }
 
-// Extract HTML from Claude's response text
-function extractHtml(text: string): string {
-  // Try to find a complete HTML document
-  const htmlMatch = text.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i);
-  if (htmlMatch) return htmlMatch[0];
-
-  // Fallback: try <html>...</html>
-  const htmlTagMatch = text.match(/<html[\s\S]*<\/html>/i);
-  if (htmlTagMatch) return htmlTagMatch[0];
-
-  // If no HTML tags found, wrap the text in a basic HTML template
-  return text;
+function buildFullHtml(title: string, author: string, category: string, part1: string, part2: string): string {
+  return `<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>${title} - AI 深度解读</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:linear-gradient(135deg,#f5f7ff 0%,#f0e6ff 50%,#e8f4f8 100%);color:#1a1a2e;line-height:1.8;min-height:100vh}
+.container{max-width:900px;margin:0 auto;padding:2rem 1.5rem}
+.card{background:white;border-radius:16px;padding:2rem 2.5rem;margin-bottom:1.5rem;box-shadow:0 2px 12px rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.08)}
+.card h2{font-size:1.4rem;color:#312e81;margin-bottom:1.2rem;padding-bottom:0.6rem;border-bottom:2px solid #e0e7ff;display:flex;align-items:center;gap:0.5rem}
+.card h3{font-size:1.1rem;color:#4338ca;margin:1.2rem 0 0.6rem}
+.card p{color:#374151;margin-bottom:0.8rem;font-size:0.95rem}
+.card ul,.card ol{padding-left:1.5rem;margin-bottom:1rem}
+.card li{color:#374151;margin-bottom:0.4rem;font-size:0.95rem}
+.card blockquote{border-left:4px solid #818cf8;padding:1rem 1.5rem;margin:1rem 0;background:linear-gradient(135deg,#eef2ff,#f5f3ff);border-radius:0 12px 12px 0;font-style:italic;color:#4338ca}
+.footer{text-align:center;padding:2rem;color:#9ca3af;font-size:0.85rem}
+@media(max-width:640px){.container{padding:1rem}.card{padding:1.5rem;border-radius:12px}.card h2{font-size:1.2rem}}
+</style>
+</head>
+<body>
+<div class='container'>
+${part1}
+${part2}
+<div class='footer'>
+<p>由 AI 深度解读生成 · JohnnyDesktop</p>
+<p style='margin-top:0.3rem;font-size:0.8rem;color:#c4b5fd'>${category} · ${author || '佚名'} · ${new Date().toLocaleDateString('zh-CN')}</p>
+</div>
+</div>
+</body>
+</html>`;
 }
 
 export async function generateBookContent(
@@ -150,36 +153,28 @@ export async function generateBookContent(
   oneSentenceSummary: string;
   category: string;
 }> {
-  // Step 1: Metadata (fast, Haiku)
-  onProgress?.({ step: 1, totalSteps: 2, message: '正在分析书籍结构...' });
-
+  // Step 1: Metadata
+  onProgress?.({ step: 1, totalSteps: 3, message: '正在分析书籍结构...' });
   const metadata = await fetchMetadata(title, author);
-
   if (!metadata?.category || !metadata?.oneSentenceSummary) {
     throw new Error('元数据生成失败，请重试');
   }
 
-  // Step 2: Deep content via Skills API (streaming)
-  onProgress?.({ step: 2, totalSteps: 2, message: '正在生成深度解读（使用专业分析技能）...' });
-
-  let charCount = 0;
-  const rawText = await fetchDeepContent(title, author, metadata, (chunk) => {
-    charCount += chunk.length;
-    // Update progress with character count
-    if (charCount % 500 < 50) {
-      onProgress?.({
-        step: 2,
-        totalSteps: 2,
-        message: `正在生成深度解读... 已生成 ${Math.round(charCount / 1000)}k 字符`,
-      });
-    }
-  });
-
-  const htmlContent = extractHtml(rawText);
-
-  if (!htmlContent || htmlContent.length < 100) {
-    throw new Error('深度解读内容生成失败，请重试');
+  // Step 2: Deep content Part 1 (sections 1-5)
+  onProgress?.({ step: 2, totalSteps: 3, message: '正在深度解读（上篇：结构与论点）...' });
+  const part1 = await streamDeepContent(title, author, metadata, 1);
+  if (!part1 || part1.length < 100) {
+    throw new Error('深度解读上篇生成失败，请重试');
   }
+
+  // Step 3: Deep content Part 2 (sections 6-10)
+  onProgress?.({ step: 3, totalSteps: 3, message: '正在深度解读（下篇：洞见与评价）...' });
+  const part2 = await streamDeepContent(title, author, metadata, 2);
+  if (!part2 || part2.length < 100) {
+    throw new Error('深度解读下篇生成失败，请重试');
+  }
+
+  const htmlContent = buildFullHtml(title, author, metadata.category, part1, part2);
 
   return {
     summary: metadata.coreThesis || '',
@@ -200,11 +195,7 @@ export async function processDataLab(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sourceIds, applicationId, prompt }),
   });
-
-  if (!res.ok) {
-    throw new Error('Failed to process data');
-  }
-
+  if (!res.ok) throw new Error('Failed to process data');
   const data = await res.json();
   return data.result;
 }
@@ -219,11 +210,7 @@ export async function chatWithData(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sourceIds, message, history }),
   });
-
-  if (!res.ok) {
-    throw new Error('Failed to chat');
-  }
-
+  if (!res.ok) throw new Error('Failed to chat');
   const data = await res.json();
   return data.reply;
 }

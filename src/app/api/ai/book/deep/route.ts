@@ -1,88 +1,64 @@
-// Edge Runtime - supports long-running streaming with no timeout
-// Embeds the deep-book-deconstruction skill methodology directly in the system prompt
-// (Skills API container requires code_execution which causes idle SSE gaps on Netlify)
+// Edge Runtime for streaming support
+// Uses deep-book-deconstruction methodology in two parts to avoid connection drops
 export const runtime = 'edge';
 
-const DEEP_BOOK_DECONSTRUCTION_PROMPT = `你是一位世界顶级的书籍分析师、文学评论家和知识综合者。
-你的任务是按照 deep-book-deconstruction 方法论，创建一份出版级质量的书籍全面解构分析报告。
+const STYLE_GUIDE = `## 样式指南
+- 全部内容使用中文，内容要有思想深度和专业性
+- 使用 emoji 图标增加视觉丰富度
+- 靛蓝/紫色渐变色系（#1e1b4b, #312e81, #4338ca, #6366f1, #818cf8, #c4b5fd）
+- 现代卡片布局，微妙阴影
+- 每个 section 使用 <section class='card'> 包裹`;
 
-## 输出格式
-生成一个完整的、自包含的 HTML 文档，所有 CSS 嵌入在 <style> 标签中。
-使用靛蓝/紫色渐变主题，现代卡片布局，响应式设计。
+const PART1_PROMPT = `你是世界顶级书籍分析师，执行 deep-book-deconstruction 方法论。
+生成 HTML 片段（不包含 <!DOCTYPE>、<html>、<head>、<body> 标签，只输出 <section> 内容）。
 
-## 必须包含的章节
+生成以下 5 个章节的 HTML：
 
 ### 1. 英雄区 (Hero Section)
-- 书名（大号、突出显示）
-- 作者姓名
-- 分类徽章
-- 渐变背景
+书名大号显示、作者、分类徽章、渐变背景 section
 
 ### 2. 一句话精华
-- 优雅的引用卡片样式，捕捉全书核心信息
-- 40-80个中文字符
+优雅引用卡片，40-80字捕捉全书核心
 
 ### 3. 作者与创作背景
-- 详细的作者传记和资历
-- 书籍创作的历史/思想背景
-- 作者独特的视角及其资格
+详细作者传记、资历、创作语境（至少3段）
 
 ### 4. 核心论点与思想框架
-- 中心论点或核心主张
-- 思想框架或理论模型
-- 论证的结构方式
+中心论点、理论模型、论证结构（至少3段）
 
 ### 5. 逐章深度解构（5-8 章）
-- 每章包含 2-3 段深度分析
-- 关键论点和证据
-- 值得注意的例子和案例研究
-- 各章之间的逻辑递进关系
+每章 2-3 段深度分析，含关键论点、案例、逻辑递进
 
-### 6. 关键洞见（5-8 个洞见）
-- 每个洞见配清晰标题和图标
-- 2-3 段深入探讨
-- 现实世界的影响和应用
-- 为什么这个洞见很重要
+${STYLE_GUIDE}
+
+直接输出 HTML section 标签，不要输出任何其他文字。`;
+
+const PART2_PROMPT = `你是世界顶级书籍分析师，执行 deep-book-deconstruction 方法论。
+生成 HTML 片段（只输出 <section> 内容，不包含文档级标签）。
+
+生成以下 5 个章节的 HTML：
+
+### 6. 关键洞见（5-8 个）
+每个洞见：标题 + 图标 + 2-3段深入探讨 + 现实意义
 
 ### 7. 实践应用
-- 具体、可操作的要点
-- 如何在日常生活/工作中应用书中理念
-- 具体的练习或实践方法
+具体可操作建议，如何应用到日常生活和工作
 
 ### 8. 批判性思考
-- 本书方法论的优势
-- 弱点和局限性
-- 潜在的偏见或盲点
-- 与该领域其他著作的比较
+优势、弱点、局限性、偏见、与其他著作比较
 
-### 9. 延伸阅读推荐（3-5 本书）
-- 相关的互补或对比书籍
-- 简要说明每本书的相关性
-- 它们如何扩展或挑战本书的观点
+### 9. 延伸阅读推荐（3-5 本）
+相关书籍 + 为什么推荐 + 如何补充本书
 
 ### 10. 最终评价
-- 总体评估与星级评分
-- 谁应该阅读这本书
-- 持久的影响力和意义
+总体评估、星级评分、目标读者、持久影响力
 
-## 样式指南
-- 全部内容使用中文
-- 内容要有思想深度、专业性，不要泛泛而谈
-- 使用 emoji 图标增加视觉丰富度（📚 💡 🎯 📖 ✨ 🔑 🌟 🧠 💭 📝 等）
-- CSS 在 <style> 标签中，HTML 属性使用单引号
-- 移动端响应式设计
-- 使用靛蓝/紫色渐变色系（#1e1b4b, #312e81, #4338ca, #6366f1, #818cf8, #c4b5fd）
-- 现代卡片布局，微妙阴影效果
-- 页脚："由 AI 深度解读生成 · JohnnyDesktop"
+${STYLE_GUIDE}
 
-## 关键要求
-- 直接输出 HTML 文档，从 <!DOCTYPE html> 开始到 </html> 结束
-- 不要输出任何 HTML 以外的文字、解释或 markdown
-- 每个章节都要有实质性的深度内容，不要敷衍
-- 总内容量应该在 8000-15000 中文字符`;
+直接输出 HTML section 标签，不要输出任何其他文字。`;
 
 export async function POST(req: Request) {
-  const { title, author = '', metadata } = await req.json();
+  const { title, author = '', metadata, part = 1 } = await req.json();
 
   if (!title) {
     return Response.json({ error: 'Title is required' }, { status: 400 });
@@ -95,19 +71,15 @@ export async function POST(req: Request) {
 
   const bookRef = author ? `《${title}》（${author}）` : `《${title}》`;
 
-  // Build context from metadata if available
   const metadataContext = metadata
-    ? `\n\n已知分析信息：
-- 分类：${metadata.category}
-- 核心论点：${metadata.coreThesis}
-- 作者背景：${metadata.authorBackground}
-- 章节大纲：${(metadata.chapterOutline || []).map((ch: { title: string; keyPoint: string }, i: number) => `${i + 1}. ${ch.title}: ${ch.keyPoint}`).join('\n')}
-- 关键洞见：${(metadata.keyInsights || []).map((ins: { title: string; description: string }, i: number) => `${i + 1}. ${ins.title}: ${ins.description}`).join('\n')}`
+    ? `\n已知信息：分类：${metadata.category}，核心论点：${metadata.coreThesis}，作者：${metadata.authorBackground}
+章节：${(metadata.chapterOutline || []).map((ch: { title: string; keyPoint: string }, i: number) => `${i + 1}.${ch.title}`).join('、')}
+洞见：${(metadata.keyInsights || []).map((ins: { title: string }, i: number) => `${i + 1}.${ins.title}`).join('、')}`
     : '';
 
+  const systemPrompt = part === 1 ? PART1_PROMPT : PART2_PROMPT;
+
   try {
-    // Regular Messages API with streaming (no container/skills/code_execution)
-    // The deep-book-deconstruction methodology is embedded in the system prompt
     const apiResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -117,13 +89,13 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 16000,
+        max_tokens: 8000,
         stream: true,
-        system: DEEP_BOOK_DECONSTRUCTION_PROMPT,
+        system: systemPrompt,
         messages: [
           {
             role: 'user',
-            content: `请对 ${bookRef} 进行全面深度解构分析，严格按照所有 10 个章节要求生成完整的 HTML 报告。${metadataContext}`,
+            content: `对 ${bookRef} 执行 deep-book-deconstruction 分析，生成第${part === 1 ? '上' : '下'}半部分的 HTML sections。${metadataContext}`,
           },
         ],
       }),
@@ -131,14 +103,13 @@ export async function POST(req: Request) {
 
     if (!apiResponse.ok) {
       const errBody = await apiResponse.text();
-      console.error('Anthropic API error:', apiResponse.status, errBody);
+      console.error('API error:', apiResponse.status, errBody);
       return Response.json(
         { error: `API 错误 (${apiResponse.status}): ${errBody.slice(0, 300)}` },
         { status: 502 }
       );
     }
 
-    // Proxy the SSE stream directly to the client
     return new Response(apiResponse.body, {
       headers: {
         'Content-Type': 'text/event-stream',
