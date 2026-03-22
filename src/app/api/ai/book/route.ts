@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       const { metadata } = body;
       if (!metadata) return Response.json({ error: 'metadata required' }, { status: 400 });
 
-      const html = await callClaudeText(apiKey, 'claude-haiku-4-5-20251001', 4000, DEEP_SYSTEM,
+      const html = await callClaudeText(apiKey, 'claude-haiku-4-5-20251001', 3000, DEEP_SYSTEM,
         `deep-book-deconstruction Part 1 for ${bookRef}:
 Category: ${metadata.category} | Thesis: ${metadata.coreThesis} | Author: ${metadata.authorBackground}
 Chapters: ${(metadata.chapterOutline || []).map((c: { title: string; keyPoint: string }, i: number) => `${i + 1}.${c.title}`).join(', ')}
@@ -105,7 +105,7 @@ Chapters: ${(metadata.chapterOutline || []).map((c: { title: string; keyPoint: s
       const { metadata } = body;
       if (!metadata) return Response.json({ error: 'metadata required' }, { status: 400 });
 
-      const html = await callClaudeText(apiKey, 'claude-haiku-4-5-20251001', 4000, DEEP_SYSTEM,
+      const html = await callClaudeText(apiKey, 'claude-haiku-4-5-20251001', 3000, DEEP_SYSTEM,
         `deep-book-deconstruction Part 2 for ${bookRef}:
 Category: ${metadata.category} | Thesis: ${metadata.coreThesis}
 Insights: ${(metadata.keyInsights || []).map((i: { title: string }, n: number) => `${n + 1}.${i.title}`).join(', ')}
