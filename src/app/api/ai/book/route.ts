@@ -164,20 +164,19 @@ export async function POST(req: NextRequest) {
 
       const result = await callClaude(
         apiKey,
-        'claude-sonnet-4-5-20250514',
+        'claude-sonnet-4-6',
         8000,
-        `You are a world-class book analyst creating a beautiful HTML report. Generate rich, detailed HTML sections with professional styling.
+        `You are executing the deep-book-deconstruction methodology — a comprehensive, publication-quality book analysis framework.
 
-IMPORTANT RULES:
+HTML RULES:
 - Use single quotes in HTML attributes
-- Use inline style attributes for colors and special styling
-- Each section uses <section class='report-section'> wrapper
-- Use semantic HTML: h2, h3, p, ul, li, blockquote, etc.
-- Include emoji icons for visual richness (📚 💡 🎯 📖 ✨ 🔑 etc.)
-- Write detailed, insightful paragraphs (not just bullet points)
-- All content in Chinese
-- Make the content intellectually deep and professionally written`,
-        `Create the FIRST HALF of an HTML book report for ${bookRef}.
+- Each section uses <section class='card'> wrapper
+- Use semantic HTML: h2, h3, p, ul, li, blockquote
+- Include emoji icons (📚 💡 🎯 📖 ✨ 🔑 🧠 💭 📝)
+- Write detailed, insightful paragraphs (2-3 per section minimum)
+- All content in Chinese, intellectually deep and professional
+- Indigo/purple color scheme (#312e81, #4338ca, #6366f1, #818cf8)`,
+        `Execute deep-book-deconstruction Part 1 for ${bookRef}.
 
 Book metadata:
 - Category: ${metadata.category}
@@ -210,20 +209,19 @@ Make it visually stunning and intellectually rich.`,
 
       const result = await callClaude(
         apiKey,
-        'claude-sonnet-4-5-20250514',
+        'claude-sonnet-4-6',
         8000,
-        `You are a world-class book analyst creating a beautiful HTML report. Generate rich, detailed HTML sections with professional styling.
+        `You are executing the deep-book-deconstruction methodology — a comprehensive, publication-quality book analysis framework.
 
-IMPORTANT RULES:
+HTML RULES:
 - Use single quotes in HTML attributes
-- Use inline style attributes for colors and special styling
-- Each section uses <section class='report-section'> wrapper
-- Use semantic HTML: h2, h3, p, ul, li, blockquote, etc.
-- Include emoji icons for visual richness (📚 💡 🎯 📖 ✨ 🔑 🌟 etc.)
-- Write detailed, insightful paragraphs (not just bullet points)
-- All content in Chinese
-- Make the content intellectually deep and professionally written`,
-        `Create the SECOND HALF of an HTML book report for ${bookRef}.
+- Each section uses <section class='card'> wrapper
+- Use semantic HTML: h2, h3, p, ul, li, blockquote
+- Include emoji icons (📚 💡 🎯 🔑 🌟 🧠 ⚡ 📖)
+- Write detailed, insightful paragraphs (2-3 per section minimum)
+- All content in Chinese, intellectually deep and professional
+- Indigo/purple color scheme (#312e81, #4338ca, #6366f1, #818cf8)`,
+        `Execute deep-book-deconstruction Part 2 for ${bookRef}.
 
 Book metadata:
 - Category: ${metadata.category}
