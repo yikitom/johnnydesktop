@@ -106,9 +106,10 @@ export default function ReadingPage() {
       }
 
       toast.success('书籍解读生成完成！');
-    } catch {
+    } catch (err) {
       updateBook(id, { status: 'error' });
-      toast.error('生成失败，请重试');
+      const msg = err instanceof Error ? err.message : '生成失败';
+      toast.error(msg);
     } finally {
       setCreating(false);
     }
@@ -131,9 +132,10 @@ export default function ReadingPage() {
       }
 
       toast.success('重新生成完成！');
-    } catch {
+    } catch (err) {
       updateBook(book.id, { status: 'error' });
-      toast.error('重新生成失败');
+      const msg = err instanceof Error ? err.message : '重新生成失败';
+      toast.error(msg);
     }
   };
 
@@ -303,7 +305,7 @@ export default function ReadingPage() {
                     </>
                   ) : (
                     <>
-                      {book.status === 'ready' && (
+                      {(book.status === 'ready' || book.status === 'error') && (
                         <>
                           <button
                             onClick={() => handleRegenerate(book)}
@@ -312,13 +314,15 @@ export default function ReadingPage() {
                           >
                             🔄 更新
                           </button>
-                          <button
-                            onClick={() => setShareBook(book)}
-                            className="px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
-                            title="分享"
-                          >
-                            🔗 分享
-                          </button>
+                          {book.status === 'ready' && (
+                            <button
+                              onClick={() => setShareBook(book)}
+                              className="px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                              title="分享"
+                            >
+                              🔗 分享
+                            </button>
+                          )}
                         </>
                       )}
                       <button

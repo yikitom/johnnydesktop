@@ -24,7 +24,15 @@ export async function generateBookContent(
     });
 
     if (!res.ok) {
-      throw new Error('Failed to generate book content');
+      const errorBody = await res.text().catch(() => '');
+      let errorMsg = 'Failed to generate book content';
+      try {
+        const errJson = JSON.parse(errorBody);
+        if (errJson.error) errorMsg = errJson.error;
+      } catch {
+        // use default error message
+      }
+      throw new Error(errorMsg);
     }
 
     // Handle streaming response (used to avoid serverless timeout)

@@ -47,9 +47,10 @@ export default function BookDetailPage({ params }: { params: Promise<{ id: strin
       }
 
       toast.success('内容已更新！');
-    } catch {
+    } catch (err) {
       updateBook(book.id, { status: 'error' });
-      toast.error('更新失败');
+      const msg = err instanceof Error ? err.message : '更新失败';
+      toast.error(msg);
     }
   };
 

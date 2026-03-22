@@ -50,7 +50,11 @@ export async function POST(req: NextRequest) {
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return Response.json(generateFallback(title, author));
+    console.error('ANTHROPIC_API_KEY is not configured');
+    return Response.json(
+      { error: 'ANTHROPIC_API_KEY is not configured. Please set it in environment variables.' },
+      { status: 500 }
+    );
   }
 
   const userMessage = author
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 12000,
         stream: true,
         messages: [
@@ -82,7 +86,10 @@ export async function POST(req: NextRequest) {
     if (!apiResponse.ok) {
       const errBody = await apiResponse.text();
       console.error('Anthropic API error:', apiResponse.status, errBody);
-      return Response.json(generateFallback(title, author));
+      return Response.json(
+        { error: `Anthropic API error (${apiResponse.status}): ${errBody.slice(0, 200)}` },
+        { status: 502 }
+      );
     }
 
     // Stream the response to keep the connection alive
