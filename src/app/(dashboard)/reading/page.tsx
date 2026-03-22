@@ -295,6 +295,7 @@ export default function ReadingPage() {
                       updateBookInAirtable(book.airtableId, { coverUrl: url }).catch(() => {});
                     }
                   }}
+                  onClickImage={book.status === 'ready' ? () => handleOpenBook(book) : undefined}
                 />
 
                 {/* Info */}

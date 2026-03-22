@@ -60,9 +60,24 @@ async function searchBookcoverAPI(title: string, author: string): Promise<string
     );
     if (!res.ok) return null;
     const data = await res.json();
-    if (data.url) return data.url;
+    if (data.url) {
+      // Verify the image is actually loadable
+      const valid = await verifyImageUrl(data.url);
+      return valid ? data.url : null;
+    }
   } catch { /* skip */ }
   return null;
+}
+
+// Verify an image URL is actually loadable (returns 200 with image content-type)
+async function verifyImageUrl(url: string): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(url, { method: 'HEAD' }, 5000);
+    const ct = res.headers.get('content-type') || '';
+    return res.ok && ct.startsWith('image/');
+  } catch {
+    return false;
+  }
 }
 
 // ---- Source 2: Google Books API ----
