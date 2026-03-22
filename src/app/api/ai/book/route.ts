@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-});
+// Allow streaming responses to run longer
+export const maxDuration = 300;
 
 const DEEP_BOOK_DECONSTRUCTION_PROMPT = `You are a world-class book analyst and literary critic. Your task is to perform a "Deep Book Deconstruction" — a comprehensive, insightful analysis of the given book.
 
@@ -46,26 +45,30 @@ export async function POST(req: NextRequest) {
   const { title, author = '' } = await req.json();
 
   if (!title) {
-    return NextResponse.json(
-      { error: 'Title is required' },
-      { status: 400 }
-    );
+    return new Response(JSON.stringify({ error: 'Title is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    // Fallback to template when no API key
-    return generateFallbackResponse(title, author);
+    return new Response(JSON.stringify(generateFallback(title, author)), {
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
-  try {
-    const userMessage = author
-      ? `Please perform a Deep Book Deconstruction for: "${title}" by ${author}`
-      : `Please perform a Deep Book Deconstruction for: "${title}"`;
+  const userMessage = author
+    ? `Please perform a Deep Book Deconstruction for: "${title}" by ${author}`
+    : `Please perform a Deep Book Deconstruction for: "${title}"`;
 
-    const message = await anthropic.messages.create({
+  try {
+    const anthropic = new Anthropic({ apiKey });
+
+    // Use streaming to avoid serverless function timeout
+    const stream = await anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 16000,
+      max_tokens: 12000,
       messages: [
         {
           role: 'user',
@@ -74,34 +77,81 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    const textBlock = message.content.find((b) => b.type === 'text');
-    if (!textBlock || textBlock.type !== 'text') {
-      throw new Error('No text response from Claude');
-    }
+    // Create a streaming response to keep the connection alive
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        let fullText = '';
 
-    let responseText = textBlock.text.trim();
-    // Strip markdown code blocks if present
-    if (responseText.startsWith('```')) {
-      responseText = responseText.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
-    }
+        try {
+          for await (const event of stream) {
+            if (
+              event.type === 'content_block_delta' &&
+              event.delta.type === 'text_delta'
+            ) {
+              fullText += event.delta.text;
+              // Send keepalive chunks to prevent timeout
+              controller.enqueue(encoder.encode(' '));
+            }
+          }
 
-    const result = JSON.parse(responseText);
+          // Parse the collected text
+          let responseText = fullText.trim();
+          if (responseText.startsWith('```')) {
+            responseText = responseText
+              .replace(/^```(?:json)?\s*\n?/, '')
+              .replace(/\n?```\s*$/, '');
+          }
 
-    return NextResponse.json({
-      summary: result.summary || '',
-      content: '', // We use htmlContent instead
-      oneSentenceSummary: result.oneSentenceSummary || '',
-      category: result.category || '文学小说',
-      htmlContent: result.htmlContent || '',
+          let result;
+          try {
+            result = JSON.parse(responseText);
+          } catch {
+            // If JSON parse fails, try to extract JSON from the text
+            const jsonMatch = responseText.match(/\{[\s\S]*\}$/);
+            if (jsonMatch) {
+              result = JSON.parse(jsonMatch[0]);
+            } else {
+              throw new Error('Failed to parse Claude response as JSON');
+            }
+          }
+
+          const finalData = JSON.stringify({
+            summary: result.summary || '',
+            content: '',
+            oneSentenceSummary: result.oneSentenceSummary || '',
+            category: result.category || '文学小说',
+            htmlContent: result.htmlContent || '',
+          });
+
+          // Send the final JSON prefixed with a marker
+          controller.enqueue(encoder.encode(`\n__RESULT__${finalData}`));
+          controller.close();
+        } catch (err) {
+          console.error('Streaming error:', err);
+          const fallback = JSON.stringify(generateFallback(title, author));
+          controller.enqueue(encoder.encode(`\n__RESULT__${fallback}`));
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Transfer-Encoding': 'chunked',
+        'Cache-Control': 'no-cache',
+      },
     });
   } catch (error) {
-    console.error('Claude API error:', error);
-    // Fallback to template on error
-    return generateFallbackResponse(title, author);
+    console.error('Claude API init error:', error);
+    return new Response(JSON.stringify(generateFallback(title, author)), {
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }
 
-function generateFallbackResponse(title: string, author: string) {
+function generateFallback(title: string, author: string) {
   const category = classifyBookFallback(title, author);
   const oneSentenceSummary = author
     ? `《${title}》是${author}的经典之作，深刻探讨了人类认知与社会发展的核心命题。`
@@ -111,13 +161,13 @@ function generateFallbackResponse(title: string, author: string) {
 
   const htmlContent = generateFallbackHtml(title, author, category);
 
-  return NextResponse.json({
+  return {
     summary,
     content: '',
     oneSentenceSummary,
     category,
     htmlContent,
-  });
+  };
 }
 
 function classifyBookFallback(title: string, author: string): string {

@@ -1,4 +1,4 @@
-// AI service - calls the backend API which uses Stitch MCP skill
+// AI service - calls the backend API which uses Claude deep-book-deconstruction
 export async function generateBookContent(
   title: string,
   author: string
@@ -19,7 +19,23 @@ export async function generateBookContent(
     throw new Error('Failed to generate book content');
   }
 
-  return res.json();
+  // Handle streaming response (used to avoid serverless timeout)
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    // Direct JSON response (fallback mode)
+    return res.json();
+  }
+
+  // Streaming response: read the full body and extract the __RESULT__ marker
+  const text = await res.text();
+  const marker = '__RESULT__';
+  const idx = text.lastIndexOf(marker);
+  if (idx === -1) {
+    throw new Error('Invalid streaming response: no result marker');
+  }
+
+  const jsonStr = text.slice(idx + marker.length);
+  return JSON.parse(jsonStr);
 }
 
 export async function processDataLab(
