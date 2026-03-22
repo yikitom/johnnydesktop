@@ -3,7 +3,7 @@
 export const runtime = 'edge';
 
 const ANTHROPIC_API = 'https://api.anthropic.com';
-const BETA_HEADERS = 'code-execution-2025-08-25,skills-2025-10-02';
+const BETA_HEADERS = 'skills-2025-10-02';
 const SKILL_NAME = 'deep-book-deconstruction';
 
 // Cache skill_id in module scope (persists across requests in the same edge instance)
@@ -185,7 +185,9 @@ export async function POST(req: Request) {
     // Ensure the custom skill exists
     const skillId = await ensureSkill(apiKey);
 
-    // Call Anthropic beta Messages API with container + skills + code_execution + streaming
+    // Call Anthropic beta Messages API with container + skill (no code_execution)
+    // Without code_execution, Claude reads the skill's SKILL.md instructions
+    // and outputs text directly (streamable), rather than creating files server-side
     const apiResponse = await fetch(`${ANTHROPIC_API}/v1/messages`, {
       method: 'POST',
       headers: apiHeaders(apiKey),
@@ -199,15 +201,13 @@ export async function POST(req: Request) {
             type: 'custom',
           }],
         },
-        tools: [{
-          type: 'code_execution_20250825',
-          name: 'code_execution',
-        }],
         messages: [
           {
             role: 'user',
-            content: `请使用 deep-book-deconstruction 技能对 ${bookRef} 进行全面深度解构分析。
-生成一个完整的、自包含的 HTML 文档报告。直接输出 HTML 代码，不要输出其他文字。${metadataContext}`,
+            content: `请严格按照 deep-book-deconstruction 技能中 SKILL.md 定义的方法论，对 ${bookRef} 进行全面深度解构分析。
+
+直接输出一个完整的、自包含的 HTML 文档（从 <!DOCTYPE html> 开始到 </html> 结束）。
+不要输出任何 HTML 文档以外的文字、解释或说明。${metadataContext}`,
           },
         ],
       }),
