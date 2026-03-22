@@ -5,6 +5,7 @@ export async function generateBookContent(
 ): Promise<{
   summary: string;
   content: string;
+  htmlContent: string;
   oneSentenceSummary: string;
   category: string;
 }> {

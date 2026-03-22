@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import Link from 'next/link';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useBookStore, type Book } from '@/lib/store';
 import { generateBookContent } from '@/lib/ai';
-import { saveBookToAirtable } from '@/lib/airtable';
+import { saveBookToAirtable, fetchBooksFromAirtable } from '@/lib/airtable';
 import CreateBookModal from '@/components/CreateBookModal';
 import ShareModal from '@/components/ShareModal';
 import toast from 'react-hot-toast';
@@ -19,6 +18,31 @@ export default function ReadingPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [shareBook, setShareBook] = useState<Book | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load books from Airtable on mount
+  useEffect(() => {
+    if (loaded) return;
+    fetchBooksFromAirtable().then((airtableBooks) => {
+      if (airtableBooks.length > 0) {
+        const existingIds = new Set(books.map((b) => b.airtableId).filter(Boolean));
+        for (const ab of airtableBooks) {
+          if (!existingIds.has(ab.airtableId)) {
+            addBook(ab);
+          }
+        }
+      }
+      setLoaded(true);
+    });
+  }, [loaded, books, addBook]);
+
+  const handleOpenBook = useCallback((book: Book) => {
+    if (book.airtableId) {
+      window.open(`/reading/view/${book.airtableId}`, '_blank');
+    } else {
+      window.open(`/reading/view/${book.id}`, '_blank');
+    }
+  }, []);
 
   // Get all categories
   const categories = useMemo(() => {
@@ -211,11 +235,12 @@ export default function ReadingPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     {book.status === 'ready' ? (
-                      <Link href={`/reading/${book.id}`}>
-                        <h3 className="font-semibold text-gray-900 truncate hover:text-indigo-600 transition-colors">
-                          {book.title}
-                        </h3>
-                      </Link>
+                      <h3
+                        onClick={() => handleOpenBook(book)}
+                        className="font-semibold text-gray-900 truncate hover:text-indigo-600 transition-colors cursor-pointer"
+                      >
+                        {book.title}
+                      </h3>
                     ) : (
                       <h3 className="font-semibold text-gray-900 truncate">{book.title}</h3>
                     )}

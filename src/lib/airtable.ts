@@ -13,9 +13,9 @@ export async function saveBookToAirtable(book: Book): Promise<string | null> {
           title: book.title,
           author: book.author,
           category: book.category,
-          summary: book.summary,
-          content: book.content,
           oneSentenceSummary: book.oneSentenceSummary,
+          htmlContent: book.htmlContent || '',
+          status: book.status,
           createdAt: book.createdAt,
           updatedAt: book.updatedAt,
         },
@@ -54,5 +54,16 @@ export async function fetchBooksFromAirtable(): Promise<Book[]> {
   } catch (e) {
     console.error('Failed to fetch from Airtable:', e);
     return [];
+  }
+}
+
+export async function fetchBookFromAirtable(airtableId: string): Promise<Book | null> {
+  try {
+    const res = await fetch(`${AIRTABLE_API_URL}?id=${airtableId}`);
+    const data = await res.json();
+    return data.book || null;
+  } catch (e) {
+    console.error('Failed to fetch book from Airtable:', e);
+    return null;
   }
 }

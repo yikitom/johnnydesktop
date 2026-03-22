@@ -1,36 +1,145 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// In-memory store as fallback when Airtable is not configured
-// In production, this connects to Airtable via their API
+const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || 'appFONUS3XPyW56Ue';
+const AIRTABLE_TABLE_NAME = 'jd_books';
+const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY || '';
+
+const airtableUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}`;
+
+function headers() {
+  return {
+    Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+// In-memory fallback when Airtable API key is not configured
 const inMemoryBooks: Record<string, Record<string, unknown>> = {};
 
-export async function GET() {
-  const books = Object.entries(inMemoryBooks).map(([id, book]) => ({
-    id,
-    airtableId: id,
-    ...book,
-    isDeleted: false,
-    status: 'ready',
-  }));
-  return NextResponse.json({ books });
+function useInMemory() {
+  return !AIRTABLE_API_KEY;
+}
+
+export async function GET(req: NextRequest) {
+  const id = req.nextUrl.searchParams.get('id');
+
+  if (useInMemory()) {
+    if (id) {
+      const book = inMemoryBooks[id];
+      if (!book) return NextResponse.json({ book: null });
+      return NextResponse.json({ book: { id, airtableId: id, ...book, isDeleted: false, status: book.status || 'ready' } });
+    }
+    const books = Object.entries(inMemoryBooks).map(([recId, book]) => ({
+      id: recId,
+      airtableId: recId,
+      ...book,
+      isDeleted: false,
+      status: book.status || 'ready',
+    }));
+    return NextResponse.json({ books });
+  }
+
+  try {
+    if (id) {
+      const res = await fetch(`${airtableUrl}/${id}`, { headers: headers() });
+      if (!res.ok) return NextResponse.json({ book: null });
+      const data = await res.json();
+      const fields = data.fields;
+      return NextResponse.json({
+        book: {
+          id: data.id,
+          airtableId: data.id,
+          title: fields.title || '',
+          author: fields.author || '',
+          category: fields.category || '',
+          oneSentenceSummary: fields.oneSentenceSummary || '',
+          htmlContent: fields.htmlContent || '',
+          status: fields.status || 'ready',
+          createdAt: fields.createdAt || '',
+          updatedAt: fields.updatedAt || '',
+          isDeleted: false,
+        },
+      });
+    }
+
+    // List all records
+    const res = await fetch(`${airtableUrl}?sort%5B0%5D%5Bfield%5D=createdAt&sort%5B0%5D%5Bdirection%5D=desc`, {
+      headers: headers(),
+    });
+    const data = await res.json();
+    const books = (data.records || []).map((rec: { id: string; fields: Record<string, unknown> }) => ({
+      id: rec.id,
+      airtableId: rec.id,
+      title: rec.fields.title || '',
+      author: rec.fields.author || '',
+      category: rec.fields.category || '',
+      oneSentenceSummary: rec.fields.oneSentenceSummary || '',
+      htmlContent: rec.fields.htmlContent || '',
+      status: rec.fields.status || 'ready',
+      createdAt: rec.fields.createdAt || '',
+      updatedAt: rec.fields.updatedAt || '',
+      isDeleted: false,
+    }));
+    return NextResponse.json({ books });
+  } catch (e) {
+    console.error('Airtable GET error:', e);
+    return NextResponse.json({ books: [], error: 'Failed to fetch from Airtable' }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
-  if (body.action === 'create') {
+  if (body.action !== 'create') {
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  }
+
+  if (useInMemory()) {
     const id = `rec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     inMemoryBooks[id] = body.book;
     return NextResponse.json({ airtableId: id });
   }
 
-  return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  try {
+    const fields: Record<string, unknown> = {
+      title: body.book.title,
+      author: body.book.author || '',
+      category: body.book.category || '',
+      oneSentenceSummary: body.book.oneSentenceSummary || '',
+      htmlContent: body.book.htmlContent || '',
+      status: body.book.status || 'ready',
+    };
+
+    if (body.book.createdAt) {
+      fields.createdAt = body.book.createdAt;
+    }
+    if (body.book.updatedAt) {
+      fields.updatedAt = body.book.updatedAt;
+    }
+
+    const res = await fetch(airtableUrl, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ records: [{ fields }] }),
+    });
+
+    const data = await res.json();
+    const airtableId = data.records?.[0]?.id;
+    return NextResponse.json({ airtableId });
+  } catch (e) {
+    console.error('Airtable POST error:', e);
+    return NextResponse.json({ error: 'Failed to save to Airtable' }, { status: 500 });
+  }
 }
 
 export async function PUT(req: NextRequest) {
   const body = await req.json();
 
-  if (body.action === 'update' && body.airtableId) {
+  if (body.action !== 'update' || !body.airtableId) {
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  }
+
+  if (useInMemory()) {
     if (inMemoryBooks[body.airtableId]) {
       inMemoryBooks[body.airtableId] = {
         ...inMemoryBooks[body.airtableId],
@@ -41,5 +150,19 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  try {
+    const res = await fetch(`${airtableUrl}/${body.airtableId}`, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify({ fields: body.book }),
+    });
+
+    if (!res.ok) {
+      return NextResponse.json({ error: 'Failed to update' }, { status: res.status });
+    }
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    console.error('Airtable PUT error:', e);
+    return NextResponse.json({ error: 'Failed to update Airtable' }, { status: 500 });
+  }
 }

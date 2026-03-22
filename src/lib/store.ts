@@ -8,6 +8,7 @@ export interface Book {
   category: string;
   summary: string;
   content: string;
+  htmlContent?: string;
   oneSentenceSummary: string;
   createdAt: string;
   updatedAt: string;

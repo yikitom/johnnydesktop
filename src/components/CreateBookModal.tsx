@@ -17,7 +17,7 @@ export default function CreateBookModal({ isOpen, onClose, onSubmit, isLoading }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (title.trim() && author.trim()) {
+    if (title.trim()) {
       onSubmit(title.trim(), author.trim());
       setTitle('');
       setAuthor('');
@@ -30,7 +30,7 @@ export default function CreateBookModal({ isOpen, onClose, onSubmit, isLoading }
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         <div className="bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-4">
           <h2 className="text-lg font-semibold text-white">创建 AI 读书</h2>
-          <p className="text-sm text-white/70">输入书名和作者，AI 将为你生成深度解读</p>
+          <p className="text-sm text-white/70">输入书名，AI 将为你生成深度解读报告</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -47,7 +47,7 @@ export default function CreateBookModal({ isOpen, onClose, onSubmit, isLoading }
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">作者</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">作者 <span className="text-gray-400 font-normal">(选填)</span></label>
             <input
               type="text"
               value={author}
@@ -68,7 +68,7 @@ export default function CreateBookModal({ isOpen, onClose, onSubmit, isLoading }
             </button>
             <button
               type="submit"
-              disabled={!title.trim() || !author.trim() || isLoading}
+              disabled={!title.trim() || isLoading}
               className="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
