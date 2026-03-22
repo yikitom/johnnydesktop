@@ -1,69 +1,81 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Known English titles for better Amazon search results
+// Known English titles for better search
 const KNOWN_TRANSLATIONS: Record<string, string> = {
   '思考快与慢': 'Thinking Fast and Slow',
   '思考，快与慢': 'Thinking Fast and Slow',
   '乡土中国': 'From the Soil',
   '人类简史': 'Sapiens',
   '未来简史': 'Homo Deus',
-  '三体': 'The Three Body Problem',
-  '活着': 'To Live Yu Hua',
+  '三体': 'The Three-Body Problem',
+  '活着': 'To Live',
   '百年孤独': 'One Hundred Years of Solitude',
   '小王子': 'The Little Prince',
   '追风筝的人': 'The Kite Runner',
-  '1984': '1984 George Orwell',
+  '1984': '1984',
   '围城': 'Fortress Besieged',
   '红楼梦': 'Dream of the Red Chamber',
   '西游记': 'Journey to the West',
-  '脑机接口': 'Brain Computer Interface',
+  '脑机接口': 'Brain-Computer Interface',
+  '原则': 'Principles',
 };
 
-// Extract book cover image URL from Amazon search results page
-async function searchAmazonCover(query: string): Promise<string | null> {
-  try {
-    const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(query + ' book')}&i=stripbooks`;
-    const res = await fetch(searchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-
-    // Match Amazon product image URLs (high-res book covers)
-    // Amazon image pattern: https://m.media-amazon.com/images/I/XXXXX.jpg
-    const imgRegex = /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9+_.-]+\.(?:jpg|png)/g;
-    const matches = html.match(imgRegex);
-    if (!matches || matches.length === 0) return null;
-
-    // Filter out tiny icons/logos, prefer larger book cover images
-    for (const url of matches) {
-      // Skip sprite images and very small thumbnails
-      if (url.includes('sprite') || url.includes('icon') || url.includes('logo')) continue;
-      // Return high-res version by removing size constraints
-      return url.replace(/\._[A-Z][A-Z0-9_,]+_\./, '.');
-    }
-
-    return matches[0];
-  } catch {
-    return null;
-  }
+// Normalize for comparison: lowercase, remove punctuation/spaces
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
 }
 
-// Fallback: Google Books API
-async function searchGoogleBooks(query: string): Promise<string | null> {
+// Check if the API result title is a reasonable match for the requested title
+function titleMatches(resultTitle: string, requestedTitle: string, englishTitle?: string): boolean {
+  const normResult = normalize(resultTitle);
+  const normRequested = normalize(requestedTitle);
+
+  // Chinese title match
+  if (normResult.includes(normRequested) || normRequested.includes(normResult)) return true;
+
+  // English title match
+  if (englishTitle) {
+    const normEnglish = normalize(englishTitle);
+    if (normResult.includes(normEnglish) || normEnglish.includes(normResult)) return true;
+  }
+
+  return false;
+}
+
+// Open Library: structured API with title verification
+async function searchOpenLibrary(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5&fields=title,cover_i`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    for (const doc of data.docs || []) {
+      if (!doc.cover_i) continue;
+      // Verify title matches
+      if (!titleMatches(doc.title || '', requestedTitle, englishTitle)) continue;
+      return `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
+    }
+  } catch { /* skip */ }
+  return null;
+}
+
+// Google Books: structured API with title verification
+async function searchGoogleBooks(query: string, requestedTitle: string, englishTitle?: string): Promise<string | null> {
   try {
     const res = await fetch(
       `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5`
     );
     if (!res.ok) return null;
     const data = await res.json();
+
     for (const item of data.items || []) {
-      const links = item.volumeInfo?.imageLinks;
-      const url = links?.thumbnail || links?.smallThumbnail;
+      const info = item.volumeInfo;
+      if (!info?.imageLinks) continue;
+      // Verify title matches
+      if (!titleMatches(info.title || '', requestedTitle, englishTitle)) continue;
+      const url = info.imageLinks.thumbnail || info.imageLinks.smallThumbnail;
       if (url) {
         return url.replace('http://', 'https://').replace('zoom=1', 'zoom=2');
       }
@@ -78,34 +90,27 @@ export async function GET(req: NextRequest) {
 
   if (!title) return NextResponse.json({ coverUrl: null });
 
-  // Clean title
   const cleanTitle = title.replace(/[《》""「」]/g, '');
   const englishTitle = KNOWN_TRANSLATIONS[cleanTitle];
 
-  // Try 1: Amazon with English title (if available)
-  if (englishTitle) {
-    const cover = await searchAmazonCover(englishTitle);
+  // Search queries to try, in order of specificity
+  const queries: string[] = [];
+  if (englishTitle) queries.push(englishTitle);
+  queries.push(`${cleanTitle} ${author}`);
+  queries.push(cleanTitle);
+
+  // Try Open Library first (better cover quality)
+  for (const q of queries) {
+    const cover = await searchOpenLibrary(q, cleanTitle, englishTitle);
     if (cover) return NextResponse.json({ coverUrl: cover });
   }
 
-  // Try 2: Amazon with original title + author
-  let cover = await searchAmazonCover(`${cleanTitle} ${author}`);
-  if (cover) return NextResponse.json({ coverUrl: cover });
-
-  // Try 3: Amazon with title only
-  cover = await searchAmazonCover(cleanTitle);
-  if (cover) return NextResponse.json({ coverUrl: cover });
-
-  // Try 4: Google Books fallback with title + author
-  cover = await searchGoogleBooks(`${cleanTitle} ${author}`);
-  if (cover) return NextResponse.json({ coverUrl: cover });
-
-  // Try 5: Google Books with English title
-  if (englishTitle) {
-    cover = await searchGoogleBooks(englishTitle);
+  // Fallback to Google Books
+  for (const q of queries) {
+    const cover = await searchGoogleBooks(q, cleanTitle, englishTitle);
     if (cover) return NextResponse.json({ coverUrl: cover });
   }
 
-  // No cover found — client will show fallback
+  // No verified cover found — client shows fallback
   return NextResponse.json({ coverUrl: null });
 }
