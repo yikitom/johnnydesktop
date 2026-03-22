@@ -1,16 +1,8 @@
-// AI service - multi-step book generation for deep analysis
-// Step 1: Metadata (Haiku, fast) → Step 2: HTML Part 1 (Sonnet) → Step 3: HTML Part 2 (Sonnet)
+// AI service - multi-step book generation
+// Step 1: Metadata (Haiku, fast, non-streaming)
+// Step 2: Deep content via Anthropic Skills API (Sonnet + deep-book-deconstruction skill, streaming)
 
-const STEP_TIMEOUT_MS = 55 * 1000; // 55 second timeout per step
-
-interface BookMetadata {
-  category: string;
-  oneSentenceSummary: string;
-  authorBackground: string;
-  coreThesis: string;
-  chapterOutline: { title: string; keyPoint: string }[];
-  keyInsights: { title: string; description: string }[];
-}
+const STEP_TIMEOUT_MS = 55 * 1000; // 55 second timeout for step 1
 
 export type GenerationProgress = {
   step: number;
@@ -18,42 +10,34 @@ export type GenerationProgress = {
   message: string;
 };
 
-async function fetchStep(
-  body: Record<string, unknown>,
-  signal?: AbortSignal,
-): Promise<Record<string, unknown>> {
+// Step 1: Quick metadata fetch (non-streaming)
+async function fetchMetadata(title: string, author: string) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), STEP_TIMEOUT_MS);
-
-  // Forward external abort signal
-  if (signal) {
-    signal.addEventListener('abort', () => controller.abort());
-  }
 
   try {
     const res = await fetch('/api/ai/book', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ title, author, step: 1 }),
       signal: controller.signal,
     });
 
     if (!res.ok) {
       const errorBody = await res.text().catch(() => '');
-      let errorMsg = '生成失败';
+      let errorMsg = '元数据生成失败';
       try {
         const errJson = JSON.parse(errorBody);
         if (errJson.error) errorMsg = errJson.error;
-      } catch {
-        // use default
-      }
+      } catch { /* use default */ }
       throw new Error(errorMsg);
     }
 
-    return res.json();
+    const data = await res.json();
+    return data.metadata;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('生成超时，请重试');
+      throw new Error('元数据生成超时，请重试');
     }
     throw err;
   } finally {
@@ -61,101 +45,89 @@ async function fetchStep(
   }
 }
 
-function buildFullHtml(
+// Step 2: Deep content via Skills API (streaming, no timeout - edge function)
+async function fetchDeepContent(
   title: string,
   author: string,
-  metadata: BookMetadata,
-  htmlPart1: string,
-  htmlPart2: string,
-): string {
-  return `<!DOCTYPE html>
-<html lang='zh-CN'>
-<head>
-<meta charset='UTF-8'>
-<meta name='viewport' content='width=device-width, initial-scale=1.0'>
-<title>${title} - AI 深度解读</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  background: linear-gradient(135deg, #f5f7ff 0%, #f0e6ff 50%, #e8f4f8 100%);
-  color: #1a1a2e;
-  line-height: 1.8;
-  min-height: 100vh;
+  metadata: Record<string, unknown>,
+  onChunk?: (text: string) => void,
+): Promise<string> {
+  const res = await fetch('/api/ai/book/deep', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, author, metadata }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text().catch(() => '');
+    let errorMsg = '深度解读生成失败';
+    try {
+      const errJson = JSON.parse(errorBody);
+      if (errJson.error) errorMsg = errJson.error;
+    } catch { /* use default */ }
+    throw new Error(errorMsg);
+  }
+
+  // Parse SSE stream and accumulate text content
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error('无法读取流式响应');
+
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Parse SSE events from buffer
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') continue;
+
+      try {
+        const event = JSON.parse(data);
+
+        // Handle text content deltas
+        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+          const text = event.delta.text || '';
+          accumulated += text;
+          onChunk?.(text);
+        }
+
+        // Handle errors
+        if (event.type === 'error') {
+          throw new Error(event.error?.message || '流式响应错误');
+        }
+      } catch (e) {
+        // Skip unparseable lines (SSE comments, empty events, etc.)
+        if (e instanceof SyntaxError) continue;
+        throw e;
+      }
+    }
+  }
+
+  return accumulated;
 }
-.container { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; }
-.report-section {
-  background: white;
-  border-radius: 16px;
-  padding: 2rem 2.5rem;
-  margin-bottom: 1.5rem;
-  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.06);
-  border: 1px solid rgba(99, 102, 241, 0.08);
-}
-.report-section h2 {
-  font-size: 1.4rem;
-  color: #312e81;
-  margin-bottom: 1.2rem;
-  padding-bottom: 0.6rem;
-  border-bottom: 2px solid #e0e7ff;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.report-section h3 {
-  font-size: 1.1rem;
-  color: #4338ca;
-  margin: 1.2rem 0 0.6rem;
-}
-.report-section p {
-  color: #374151;
-  margin-bottom: 0.8rem;
-  font-size: 0.95rem;
-}
-.report-section ul, .report-section ol {
-  padding-left: 1.5rem;
-  margin-bottom: 1rem;
-}
-.report-section li {
-  color: #374151;
-  margin-bottom: 0.4rem;
-  font-size: 0.95rem;
-}
-.report-section blockquote {
-  border-left: 4px solid #818cf8;
-  padding: 1rem 1.5rem;
-  margin: 1rem 0;
-  background: linear-gradient(135deg, #eef2ff, #f5f3ff);
-  border-radius: 0 12px 12px 0;
-  font-style: italic;
-  color: #4338ca;
-}
-.footer {
-  text-align: center;
-  padding: 2rem;
-  color: #9ca3af;
-  font-size: 0.85rem;
-}
-@media (max-width: 640px) {
-  .container { padding: 1rem; }
-  .report-section { padding: 1.5rem; border-radius: 12px; }
-  .report-section h2 { font-size: 1.2rem; }
-}
-</style>
-</head>
-<body>
-<div class='container'>
-${htmlPart1}
-${htmlPart2}
-<div class='footer'>
-  <p>由 AI 深度解读生成 · JohnnyDesktop</p>
-  <p style='margin-top:0.3rem;font-size:0.8rem;color:#c4b5fd;'>
-    ${metadata.category} · ${author || '佚名'} · ${new Date().toLocaleDateString('zh-CN')}
-  </p>
-</div>
-</div>
-</body>
-</html>`;
+
+// Extract HTML from Claude's response text
+function extractHtml(text: string): string {
+  // Try to find a complete HTML document
+  const htmlMatch = text.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i);
+  if (htmlMatch) return htmlMatch[0];
+
+  // Fallback: try <html>...</html>
+  const htmlTagMatch = text.match(/<html[\s\S]*<\/html>/i);
+  if (htmlTagMatch) return htmlTagMatch[0];
+
+  // If no HTML tags found, wrap the text in a basic HTML template
+  return text;
 }
 
 export async function generateBookContent(
@@ -170,37 +142,35 @@ export async function generateBookContent(
   category: string;
 }> {
   // Step 1: Metadata (fast, Haiku)
-  onProgress?.({ step: 1, totalSteps: 3, message: '正在分析书籍结构...' });
+  onProgress?.({ step: 1, totalSteps: 2, message: '正在分析书籍结构...' });
 
-  const step1Result = await fetchStep({ title, author, step: 1 });
-  const metadata = step1Result.metadata as BookMetadata;
+  const metadata = await fetchMetadata(title, author);
 
   if (!metadata?.category || !metadata?.oneSentenceSummary) {
     throw new Error('元数据生成失败，请重试');
   }
 
-  // Step 2: HTML Part 1 (Sonnet, deep content)
-  onProgress?.({ step: 2, totalSteps: 3, message: '正在生成深度解读（上篇）...' });
+  // Step 2: Deep content via Skills API (streaming)
+  onProgress?.({ step: 2, totalSteps: 2, message: '正在生成深度解读（使用专业分析技能）...' });
 
-  const step2Result = await fetchStep({ title, author, step: 2, metadata });
-  const htmlPart1 = (step2Result.htmlPart1 as string) || '';
+  let charCount = 0;
+  const rawText = await fetchDeepContent(title, author, metadata, (chunk) => {
+    charCount += chunk.length;
+    // Update progress with character count
+    if (charCount % 500 < 50) {
+      onProgress?.({
+        step: 2,
+        totalSteps: 2,
+        message: `正在生成深度解读... 已生成 ${Math.round(charCount / 1000)}k 字符`,
+      });
+    }
+  });
 
-  if (!htmlPart1) {
-    throw new Error('内容生成失败（上篇），请重试');
+  const htmlContent = extractHtml(rawText);
+
+  if (!htmlContent || htmlContent.length < 100) {
+    throw new Error('深度解读内容生成失败，请重试');
   }
-
-  // Step 3: HTML Part 2 (Sonnet, deep content)
-  onProgress?.({ step: 3, totalSteps: 3, message: '正在生成深度解读（下篇）...' });
-
-  const step3Result = await fetchStep({ title, author, step: 3, metadata });
-  const htmlPart2 = (step3Result.htmlPart2 as string) || '';
-
-  if (!htmlPart2) {
-    throw new Error('内容生成失败（下篇），请重试');
-  }
-
-  // Combine into full HTML document
-  const htmlContent = buildFullHtml(title, author, metadata, htmlPart1, htmlPart2);
 
   return {
     summary: metadata.coreThesis || '',
