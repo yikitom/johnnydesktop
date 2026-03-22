@@ -6,6 +6,7 @@ import { generateBookContent, type GenerationProgress } from '@/lib/ai';
 import { saveBookToAirtable, fetchBooksFromAirtable, updateBookInAirtable } from '@/lib/airtable';
 import CreateBookModal from '@/components/CreateBookModal';
 import ShareModal from '@/components/ShareModal';
+import BookCover from '@/components/BookCover';
 import toast from 'react-hot-toast';
 
 export default function ReadingPage() {
@@ -280,61 +281,74 @@ export default function ReadingPage() {
               key={book.id}
               className="bg-white rounded-2xl border border-gray-100 hover:shadow-lg hover:shadow-gray-200/50 transition-all group overflow-hidden"
             >
-              {/* Card Header */}
-              <div className="bg-gradient-to-r from-indigo-500/5 to-purple-500/5 px-5 py-4 border-b border-gray-100">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    {book.status === 'ready' ? (
-                      <h3
-                        onClick={() => handleOpenBook(book)}
-                        className="font-semibold text-gray-900 truncate hover:text-indigo-600 transition-colors cursor-pointer"
-                      >
-                        {book.title}
-                      </h3>
-                    ) : (
-                      <h3 className="font-semibold text-gray-900 truncate">{book.title}</h3>
-                    )}
-                    <p className="text-sm text-gray-500 mt-0.5">{book.author}</p>
-                  </div>
-                  {book.category && (
-                    <span className="ml-2 px-2.5 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[11px] font-medium whitespace-nowrap">
-                      {book.category}
-                    </span>
-                  )}
-                </div>
-              </div>
+              {/* Card Body: Cover + Info */}
+              <div className="flex gap-4 px-5 py-4">
+                {/* Book Cover */}
+                <BookCover
+                  title={book.title}
+                  author={book.author}
+                  category={book.category}
+                  coverUrl={book.coverUrl}
+                  onCoverLoaded={(url) => updateBook(book.id, { coverUrl: url })}
+                />
 
-              {/* Card Body */}
-              <div className="px-5 py-4">
-                {book.status === 'generating' ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm text-indigo-500">
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      <span>{progressMap[book.id] || 'AI 正在生成深度解读...'}</span>
+                {/* Info */}
+                <div className="flex-1 min-w-0 flex flex-col">
+                  {/* Title + Category */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      {book.status === 'ready' ? (
+                        <h3
+                          onClick={() => handleOpenBook(book)}
+                          className="font-semibold text-gray-900 truncate hover:text-indigo-600 transition-colors cursor-pointer text-[15px]"
+                        >
+                          {book.title}
+                        </h3>
+                      ) : (
+                        <h3 className="font-semibold text-gray-900 truncate text-[15px]">{book.title}</h3>
+                      )}
+                      <p className="text-xs text-gray-400 mt-0.5">{book.author}</p>
                     </div>
-                    {progressMap[book.id] && (
-                      <div className="w-full bg-gray-100 rounded-full h-1.5">
-                        <div
-                          className="bg-gradient-to-r from-indigo-500 to-purple-500 h-1.5 rounded-full transition-all duration-500"
-                          style={{
-                            width: progressMap[book.id]?.includes('上篇') ? '45%'
-                              : progressMap[book.id]?.includes('下篇') ? '75%'
-                              : '15%',
-                          }}
-                        />
-                      </div>
+                    {book.category && (
+                      <span className="flex-shrink-0 px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-medium whitespace-nowrap">
+                        {book.category}
+                      </span>
                     )}
                   </div>
-                ) : book.status === 'error' ? (
-                  <p className="text-sm text-red-500">生成失败</p>
-                ) : (
-                  <p className="text-sm text-gray-600 line-clamp-3 leading-relaxed">
-                    {book.oneSentenceSummary}
-                  </p>
-                )}
+
+                  {/* Summary / Status */}
+                  <div className="mt-2 flex-1">
+                    {book.status === 'generating' ? (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-xs text-indigo-500">
+                          <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          <span>{progressMap[book.id] || 'AI 正在生成...'}</span>
+                        </div>
+                        {progressMap[book.id] && (
+                          <div className="w-full bg-gray-100 rounded-full h-1">
+                            <div
+                              className="bg-gradient-to-r from-indigo-500 to-purple-500 h-1 rounded-full transition-all duration-500"
+                              style={{
+                                width: progressMap[book.id]?.includes('上篇') ? '45%'
+                                  : progressMap[book.id]?.includes('下篇') ? '75%'
+                                  : '15%',
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ) : book.status === 'error' ? (
+                      <p className="text-xs text-red-500">生成失败</p>
+                    ) : (
+                      <p className="text-xs text-gray-500 line-clamp-3 leading-relaxed">
+                        {book.oneSentenceSummary}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Card Footer */}

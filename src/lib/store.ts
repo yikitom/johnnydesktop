@@ -10,6 +10,7 @@ export interface Book {
   content: string;
   htmlContent?: string;
   oneSentenceSummary: string;
+  coverUrl?: string;
   createdAt: string;
   updatedAt: string;
   isDeleted: boolean;
