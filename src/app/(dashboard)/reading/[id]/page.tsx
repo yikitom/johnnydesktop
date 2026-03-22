@@ -43,7 +43,13 @@ export default function BookDetailPage({ params }: { params: Promise<{ id: strin
       updateBook(book.id, updatedFields);
 
       if (book.airtableId) {
-        await updateBookInAirtable(book.airtableId, updatedFields);
+        try {
+          await updateBookInAirtable(book.airtableId, updatedFields);
+        } catch (e) {
+          console.error('Airtable update failed:', e);
+          toast.error('内容已生成，但保存到数据库失败');
+          return;
+        }
       }
 
       toast.success('内容已更新！');

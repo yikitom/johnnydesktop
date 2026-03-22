@@ -156,14 +156,25 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
+    // Only send fields that exist in the Airtable table schema
+    const allowedFields = ['title', 'author', 'category', 'summary', 'oneSentenceSummary', 'htmlContent', 'status', 'createdAt', 'updatedAt'];
+    const fields: Record<string, unknown> = {};
+    for (const key of allowedFields) {
+      if (key in body.book && body.book[key] !== undefined) {
+        fields[key] = body.book[key];
+      }
+    }
+
     const res = await fetch(`${airtableUrl}/${body.airtableId}`, {
       method: 'PATCH',
       headers: headers(),
-      body: JSON.stringify({ fields: body.book }),
+      body: JSON.stringify({ fields }),
     });
 
     if (!res.ok) {
-      return NextResponse.json({ error: 'Failed to update' }, { status: res.status });
+      const errBody = await res.text();
+      console.error('Airtable PATCH error:', res.status, errBody);
+      return NextResponse.json({ error: `Failed to update: ${errBody.slice(0, 200)}` }, { status: res.status });
     }
     return NextResponse.json({ success: true });
   } catch (e) {

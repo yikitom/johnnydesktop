@@ -128,7 +128,13 @@ export default function ReadingPage() {
 
       // Update in Airtable if we have an airtableId
       if (book.airtableId) {
-        await updateBookInAirtable(book.airtableId, updatedFields);
+        try {
+          await updateBookInAirtable(book.airtableId, updatedFields);
+        } catch (e) {
+          console.error('Airtable update failed:', e);
+          toast.error('内容已生成，但保存到数据库失败');
+          return;
+        }
       }
 
       toast.success('重新生成完成！');

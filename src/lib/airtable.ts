@@ -32,17 +32,15 @@ export async function saveBookToAirtable(book: Book): Promise<string | null> {
 export async function updateBookInAirtable(
   airtableId: string,
   book: Partial<Book>
-): Promise<boolean> {
-  try {
-    const res = await fetch(AIRTABLE_API_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update', airtableId, book }),
-    });
-    return res.ok;
-  } catch (e) {
-    console.error('Failed to update Airtable:', e);
-    return false;
+): Promise<void> {
+  const res = await fetch(AIRTABLE_API_URL, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update', airtableId, book }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '保存到数据库失败');
   }
 }
 
