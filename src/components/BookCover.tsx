@@ -18,8 +18,7 @@ const CATEGORY_STYLES: Record<string, { gradient: string }> = {
 
 const DEFAULT_STYLE = { gradient: 'from-indigo-400 to-purple-600' };
 
-// Loading timeout in milliseconds
-const LOADING_TIMEOUT_MS = 10_000;
+const LOADING_TIMEOUT_MS = 15_000;
 
 interface BookCoverProps {
   title: string;
@@ -64,31 +63,30 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
   const [imgUrl, setImgUrl] = useState(coverUrl || '');
   const [imgError, setImgError] = useState(false);
   const [imgReady, setImgReady] = useState(false);
-  const [loading, setLoading] = useState(!coverUrl);
+  const [fetching, setFetching] = useState(!coverUrl);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const onCoverLoadedRef = useRef(onCoverLoaded);
+  onCoverLoadedRef.current = onCoverLoaded;
 
   const style = CATEGORY_STYLES[category] || DEFAULT_STYLE;
 
-  // Clear timeout on unmount
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
-  // Handle image load success
   const handleImgLoad = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setImgReady(true);
-    setLoading(false);
+    setFetching(false);
   }, []);
 
-  // Handle image load error
   const handleImgError = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setImgError(true);
     setImgReady(false);
-    setLoading(false);
+    setFetching(false);
   }, []);
 
   useEffect(() => {
@@ -96,25 +94,23 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
       setImgUrl(coverUrl);
       setImgError(false);
       setImgReady(false);
-      setLoading(true);
+      setFetching(false);
 
-      // Start image load timeout - if the image doesn't load in 10s, give up
       timeoutRef.current = setTimeout(() => {
         setImgError(true);
         setImgReady(false);
-        setLoading(false);
       }, LOADING_TIMEOUT_MS);
       return;
     }
 
     // Fetch cover from API
     let cancelled = false;
+    setFetching(true);
 
-    // API fetch timeout
     const apiTimeout = setTimeout(() => {
       if (!cancelled) {
         cancelled = true;
-        setLoading(false);
+        setFetching(false);
       }
     }, LOADING_TIMEOUT_MS);
 
@@ -127,35 +123,32 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
           setImgUrl(data.coverUrl);
           setImgError(false);
           setImgReady(false);
-          onCoverLoaded?.(data.coverUrl);
+          setFetching(false);
+          onCoverLoadedRef.current?.(data.coverUrl);
 
-          // Start image load timeout
           timeoutRef.current = setTimeout(() => {
             if (!cancelled) {
               setImgError(true);
               setImgReady(false);
-              setLoading(false);
             }
           }, LOADING_TIMEOUT_MS);
         } else {
-          // API returned no cover → show fallback immediately
-          setLoading(false);
+          setFetching(false);
         }
       })
       .catch(() => {
         clearTimeout(apiTimeout);
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setFetching(false);
       });
 
     return () => {
       cancelled = true;
       clearTimeout(apiTimeout);
     };
-  }, [title, author, coverUrl, onCoverLoaded]);
+  }, [title, author, coverUrl]);
 
-  // While loading (API fetch or image render) → show gradient + spinner
-  // Never show white background
-  if (loading && (!imgUrl || !imgReady)) {
+  // Still fetching from API — show gradient + spinner
+  if (fetching) {
     return <FallbackCover title={title} author={author} category={category} gradient={style.gradient} loading />;
   }
 
@@ -164,10 +157,9 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
     return <FallbackCover title={title} author={author} category={category} gradient={style.gradient} />;
   }
 
-  // Image URL exists — render img with gradient background underneath to prevent white flash
+  // Image URL exists — render img with gradient background underneath
   return (
     <div className={`w-[130px] h-[180px] flex-shrink-0 rounded-lg overflow-hidden shadow-md bg-gradient-to-br ${style.gradient} relative`}>
-      {/* Show spinner overlay while image is loading */}
       {!imgReady && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
@@ -180,6 +172,7 @@ export default function BookCover({ title, author, category, coverUrl, onCoverLo
         className={`w-full h-full object-cover transition-opacity duration-300 ${imgReady ? 'opacity-100' : 'opacity-0'}`}
         onLoad={handleImgLoad}
         onError={handleImgError}
+        referrerPolicy="no-referrer"
       />
     </div>
   );
