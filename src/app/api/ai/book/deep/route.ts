@@ -3,7 +3,7 @@
 export const runtime = 'edge';
 
 const ANTHROPIC_API = 'https://api.anthropic.com';
-const BETA_HEADERS = 'skills-2025-10-02';
+const BETA_HEADERS = 'code-execution-2025-08-25,skills-2025-10-02';
 const SKILL_NAME = 'deep-book-deconstruction';
 
 // Cache skill_id in module scope (persists across requests in the same edge instance)
@@ -185,9 +185,9 @@ export async function POST(req: Request) {
     // Ensure the custom skill exists
     const skillId = await ensureSkill(apiKey);
 
-    // Call Anthropic beta Messages API with container + skill (no code_execution)
-    // Without code_execution, Claude reads the skill's SKILL.md instructions
-    // and outputs text directly (streamable), rather than creating files server-side
+    // Call Anthropic beta Messages API with container + skill + code_execution
+    // code_execution is required for skills, but we instruct Claude to output
+    // HTML directly as text (not via file creation) to keep the stream flowing
     const apiResponse = await fetch(`${ANTHROPIC_API}/v1/messages`, {
       method: 'POST',
       headers: apiHeaders(apiKey),
@@ -201,12 +201,18 @@ export async function POST(req: Request) {
             type: 'custom',
           }],
         },
+        tools: [{
+          type: 'code_execution_20250825',
+          name: 'code_execution',
+        }],
         messages: [
           {
             role: 'user',
-            content: `请严格按照 deep-book-deconstruction 技能中 SKILL.md 定义的方法论，对 ${bookRef} 进行全面深度解构分析。
+            content: `请严格按照 deep-book-deconstruction 技能中 SKILL.md 定义的方法论和所有章节要求，对 ${bookRef} 进行全面深度解构分析。
 
-直接输出一个完整的、自包含的 HTML 文档（从 <!DOCTYPE html> 开始到 </html> 结束）。
+【重要】请直接在回复中输出完整的 HTML 文档代码（从 <!DOCTYPE html> 开始到 </html> 结束）。
+不要使用代码执行工具创建文件，不要使用 create 命令。
+直接将 HTML 作为文本输出在你的回复中。
 不要输出任何 HTML 文档以外的文字、解释或说明。${metadataContext}`,
           },
         ],
