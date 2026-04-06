@@ -546,9 +546,8 @@ export default function LearningPage() {
           </div>
         )}
 
-        <div className="text-center text-xs text-gray-300 mt-12 pb-8">Johnny AI Learning v1.1 · 含完整分步执行指南</div>
+        <div className="text-center text-xs text-gray-300 mt-12 pb-8">Johnny AI Learning v1.3 · 含完整分步执行指南 · {new Date().toLocaleDateString()}</div>
       </div>
     </div>
   );
 }
-// v1.2 1775463922
