@@ -7,6 +7,7 @@ import { useSession, signOut } from 'next-auth/react';
 const navItems = [
   { href: '/reading', label: 'AI 读书', icon: '📚' },
   { href: '/datalab', label: '数据实验室', icon: '🔬' },
+  { href: '/learning', label: 'AI 学习计划', icon: '🎯' },
 ];
 
 export default function Sidebar() {
