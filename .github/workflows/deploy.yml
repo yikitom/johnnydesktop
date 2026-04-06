@@ -13,13 +13,24 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
       
       - name: Install dependencies
         run: npm ci
       
-      - name: Deploy to Netlify (SSR)
+      - name: Check auth token
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "::error::NETLIFY_AUTH_TOKEN is not set! Go to repo Settings > Secrets > Actions and add it."
+            echo "Get token at: https://app.netlify.com/user/applications#personal-access-tokens"
+            exit 1
+          fi
+          echo "NETLIFY_AUTH_TOKEN is configured"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+
+      - name: Deploy to Netlify
         run: |
           npm install -g netlify-cli
           netlify deploy --build --prod --site=eceaf027-7dee-4ae7-be0f-296b6fb3683b
