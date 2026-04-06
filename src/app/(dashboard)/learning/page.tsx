@@ -453,40 +453,41 @@ export default function LearningPage() {
                         {mod.practices.map(p => {
                           const isGuideOpen = expandedPractice===p.id;
                           return (
-                            <div key={p.id} className={`rounded-xl border transition-all ${completed.has(p.id)?'bg-emerald-50 border-emerald-200':'bg-white border-gray-100'}`}>
+                            <div key={p.id} className={`rounded-xl border transition-all ${completed.has(p.id)?'bg-emerald-50 border-emerald-200':'bg-white border-gray-100 hover:border-blue-200 hover:shadow-md'}`}>
                               {/* Practice header */}
-                              <div className="flex items-center gap-3 p-3 cursor-pointer" onClick={()=>setExpandedPractice(isGuideOpen?null:p.id)}>
-                                <button onClick={e=>{e.stopPropagation();togglePractice(p.id);}} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${completed.has(p.id)?'bg-emerald-500 border-emerald-500 text-white':'border-gray-300'}`}>
+                              <div className="flex items-start gap-3 p-4 cursor-pointer" onClick={()=>setExpandedPractice(isGuideOpen?null:p.id)}>
+                                <button onClick={e=>{e.stopPropagation();togglePractice(p.id);}} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all mt-0.5 ${completed.has(p.id)?'bg-emerald-500 border-emerald-500 text-white':'border-gray-300 hover:border-gray-400'}`}>
                                   {completed.has(p.id) && <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                                 </button>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`text-sm font-medium ${completed.has(p.id)?'text-emerald-700 line-through':'text-gray-800'}`}>{p.title}</span>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`text-sm font-semibold ${completed.has(p.id)?'text-emerald-700 line-through':'text-gray-800'}`}>{p.title}</span>
                                     <Stars n={p.stars} />
+                                    <span className="text-[10px] text-gray-300 ml-auto">{p.hours}</span>
                                   </div>
-                                  <p className="text-xs text-gray-400 mt-0.5">{p.desc}</p>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-[10px] text-gray-300">{p.hours}</span>
-                                  <svg className={`w-3.5 h-3.5 text-gray-300 transition-transform ${isGuideOpen?'rotate-90':''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                  <p className="text-xs text-gray-400 mt-1">{p.desc}</p>
+                                  <div className={`mt-2 inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md transition-all ${isGuideOpen ? 'bg-blue-100 text-blue-700' : 'bg-blue-50 text-blue-500 hover:bg-blue-100'}`}>
+                                    {isGuideOpen ? '收起指南 ▾' : '查看执行指南 ▸'}
+                                    <span className="text-[10px] text-blue-300 ml-1">{p.guide.length} 步</span>
+                                  </div>
                                 </div>
                               </div>
 
                               {/* Guide steps */}
                               {isGuideOpen && (
-                                <div className="px-3 pb-4 pt-1 border-t border-gray-50">
-                                  <div className="ml-9 space-y-4">
+                                <div className="px-4 pb-5 pt-2 border-t border-blue-100 bg-gradient-to-b from-blue-50/50 to-transparent">
+                                  <div className="ml-9 space-y-5">
                                     {p.guide.map((step,si) => (
-                                      <div key={si} className="relative pl-6">
-                                        <div className="absolute left-0 top-1 w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-400">{si+1}</div>
-                                        <div className="text-sm font-semibold text-gray-800 mb-1">{step.title}</div>
+                                      <div key={si} className="relative pl-7">
+                                        <div className="absolute left-0 top-0.5 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">{si+1}</div>
+                                        <div className="text-sm font-semibold text-gray-900 mb-1">{step.title}</div>
                                         {step.body && <p className="text-[13px] text-gray-500 leading-relaxed whitespace-pre-line">{step.body}</p>}
                                         {step.code && (
-                                          <pre className="mt-2 p-3 bg-gray-900 text-emerald-300 rounded-lg text-xs overflow-x-auto leading-relaxed"><code>{step.code}</code></pre>
+                                          <pre className="mt-2 p-3 bg-gray-900 text-green-300 rounded-lg text-xs overflow-x-auto leading-relaxed font-mono"><code>{step.code}</code></pre>
                                         )}
                                         {step.check && (
-                                          <div className="mt-2 p-2 bg-emerald-50 rounded-lg text-xs text-emerald-700 flex items-start gap-2">
-                                            <span>✅</span><span><strong>完成标准：</strong>{step.check}</span>
+                                          <div className="mt-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700 flex items-start gap-2">
+                                            <span className="mt-0.5">✅</span><span><strong>完成标准：</strong>{step.check}</span>
                                           </div>
                                         )}
                                       </div>
