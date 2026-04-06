@@ -5,9 +5,9 @@ import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 
 const navItems = [
-  { href: '/reading', label: 'AI 读书', icon: '📚' },
-  { href: '/datalab', label: '数据实验室', icon: '🔬' },
-  { href: '/learning', label: 'AI 学习计划', icon: '🎯' },
+  { href: '/reading', label: 'AI Reading', icon: '📚' },
+  { href: '/datalab', label: 'AI Data Lab', icon: '🔬' },
+  { href: '/improve', label: 'AI Learning Plan', icon: '🚀' },
 ];
 
 export default function Sidebar() {

@@ -1,0 +1,34 @@
+name: Deploy to Netlify
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: e2f1c290-83f0-4740-a0c2-8f184bb17851
+      AUTH_SECRET: build-placeholder-secret-key-32chars-minimum-len
+      AUTH_URL: https://johnnydesktop.netlify.app
+      AUTH_GOOGLE_ID: placeholder
+      AUTH_GOOGLE_SECRET: placeholder
+      ANTHROPIC_API_KEY: placeholder
+      AIRTABLE_BASE_ID: appFONUS3XPyW56Ue
+      AIRTABLE_API_KEY: placeholder
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      
+      - run: npm ci
+      
+      - name: Build and deploy
+        run: |
+          npm install -g netlify-cli
+          netlify build
+          netlify deploy --prod
