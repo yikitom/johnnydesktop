@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 
 interface Step {
   title: string;
-  body: string;
+  body?: string;
   code?: string;
   check?: string;
 }
