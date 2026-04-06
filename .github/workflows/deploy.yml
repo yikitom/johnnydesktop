@@ -7,32 +7,28 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: eceaf027-7dee-4ae7-be0f-296b6fb3683b
+      AUTH_SECRET: build-placeholder-secret-key-32chars-minimum-len
+      AUTH_URL: https://johnny-desktop.netlify.app
+      AUTH_GOOGLE_ID: placeholder
+      AUTH_GOOGLE_SECRET: placeholder
+      ANTHROPIC_API_KEY: placeholder
+      AIRTABLE_BASE_ID: appFONUS3XPyW56Ue
+      AIRTABLE_API_KEY: placeholder
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
       
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
       
-      - name: Check auth token
-        run: |
-          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
-            echo "::error::NETLIFY_AUTH_TOKEN is not set! Go to repo Settings > Secrets > Actions and add it."
-            echo "Get token at: https://app.netlify.com/user/applications#personal-access-tokens"
-            exit 1
-          fi
-          echo "NETLIFY_AUTH_TOKEN is configured"
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-
-      - name: Deploy to Netlify
+      - name: Build and deploy
         run: |
           npm install -g netlify-cli
-          netlify deploy --build --prod --site=eceaf027-7dee-4ae7-be0f-296b6fb3683b
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          netlify build
+          netlify deploy --prod
