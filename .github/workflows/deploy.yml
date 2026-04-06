@@ -9,9 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-      NETLIFY_SITE_ID: eceaf027-7dee-4ae7-be0f-296b6fb3683b
+      NETLIFY_SITE_ID: e2f1c290-83f0-4740-a0c2-8f184bb17851
       AUTH_SECRET: build-placeholder-secret-key-32chars-minimum-len
-      AUTH_URL: https://johnny-desktop.netlify.app
+      AUTH_URL: https://johnnydesktop.netlify.app
       AUTH_GOOGLE_ID: placeholder
       AUTH_GOOGLE_SECRET: placeholder
       ANTHROPIC_API_KEY: placeholder
